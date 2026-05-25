@@ -17,6 +17,7 @@ interface ReadingsTableProps {
 }
 
 export function ReadingsTable({ readings }: ReadingsTableProps) {
+  // Parse numeric values safely from database strings
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleString("en-US", {
