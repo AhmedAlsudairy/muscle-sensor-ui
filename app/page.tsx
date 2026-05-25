@@ -183,7 +183,7 @@ export default function MuscleSensorDashboard() {
               Muscle Sensor Monitor
             </h1>
             <p className="text-muted-foreground mt-1">
-              Real-time EMG signal monitoring dashboard
+              EMG signal monitoring dashboard
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
