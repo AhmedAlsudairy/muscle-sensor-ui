@@ -78,10 +78,10 @@ export function ReadingsTable({ readings }: ReadingsTableProps) {
                 {formatDate(reading.created_at)}
               </td>
               <td className="py-2 px-2 text-right text-foreground font-mono">
-                {reading.signal_value.toFixed(2)}
+                {parseFloat(String(reading.signal_value)).toFixed(2)}
               </td>
               <td className="py-2 px-2 text-right text-primary font-semibold">
-                {reading.signal_percentage.toFixed(1)}%
+                {parseFloat(String(reading.signal_percentage)).toFixed(1)}%
               </td>
               <td className="py-2 px-2 text-center">
                 <span
@@ -93,10 +93,10 @@ export function ReadingsTable({ readings }: ReadingsTableProps) {
                 </span>
               </td>
               <td className="py-2 px-2 text-right text-red-400 font-mono text-xs">
-                {reading.peak_value.toFixed(1)}
+                {parseFloat(String(reading.peak_value)).toFixed(1)}
               </td>
               <td className="py-2 px-2 text-right text-blue-400 font-mono text-xs">
-                {reading.average_value.toFixed(1)}
+                {parseFloat(String(reading.average_value)).toFixed(1)}
               </td>
             </tr>
           ))}
