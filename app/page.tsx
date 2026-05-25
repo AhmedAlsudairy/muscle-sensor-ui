@@ -18,6 +18,7 @@ import { MuscleWaveform } from "@/components/muscle-waveform";
 import { MuscleIndicator } from "@/components/muscle-indicator";
 import { StatsCard } from "@/components/stats-card";
 import { HistoryChart } from "@/components/history-chart";
+import { ReadingsTable } from "@/components/readings-table";
 
 interface HistoryDataPoint {
   time: string;
@@ -52,6 +53,7 @@ export default function MuscleSensorDashboard() {
   const [dbStatus, setDbStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [totalReadings, setTotalReadings] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [rawReadings, setRawReadings] = useState<Reading[]>([]);
   const valuesRef = useRef<number[]>([]);
 
   // Setup database on mount
@@ -81,6 +83,9 @@ export default function MuscleSensorDashboard() {
       const response = await fetch("/api/readings?limit=100");
       const data = await response.json();
       if (data.success && data.readings) {
+        // Store raw readings for table
+        setRawReadings(data.readings);
+        
         // Convert readings to history data
         const history: HistoryDataPoint[] = data.readings.map((r: Reading) => {
           const date = new Date(r.created_at);
@@ -116,7 +121,7 @@ export default function MuscleSensorDashboard() {
     if (isSaving) return;
     setIsSaving(true);
     try {
-      await fetch("/api/readings", {
+      const response = await fetch("/api/readings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -127,6 +132,10 @@ export default function MuscleSensorDashboard() {
           average_value: avg,
         }),
       });
+      const data = await response.json();
+      if (data.success && data.reading) {
+        setRawReadings((prev) => [...prev, data.reading].slice(-100));
+      }
       setTotalReadings((prev) => prev + 1);
     } catch (error) {
       console.error("Failed to save reading:", error);
@@ -144,6 +153,7 @@ export default function MuscleSensorDashboard() {
       setPeakValue(0);
       setAvgValue(0);
       setTotalReadings(0);
+      setRawReadings([]);
       valuesRef.current = [];
     } catch (error) {
       console.error("Failed to clear readings:", error);
@@ -449,6 +459,24 @@ export default function MuscleSensorDashboard() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Raw Database Readings Table */}
+      <div className="mt-6 bg-card rounded-xl border border-border p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">
+              Raw Database Readings
+            </h2>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            Last {rawReadings.length} records from database
+          </span>
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          <ReadingsTable readings={[...rawReadings].reverse()} />
         </div>
       </div>
     </div>
