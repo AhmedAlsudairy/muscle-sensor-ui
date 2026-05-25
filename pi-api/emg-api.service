@@ -1,0 +1,26 @@
+[Unit]
+Description=EMG Arduino API — Serial to Neon DB
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ahmed
+WorkingDirectory=/home/ahmed/Downloads/emg-api
+ExecStart=/usr/bin/node /home/ahmed/Downloads/emg-api/server.js
+Restart=always
+RestartSec=5
+
+# Give USB serial device time to appear after boot
+ExecStartPre=/bin/sleep 5
+
+# Environment file with DATABASE_URL and SERIAL_PORT
+EnvironmentFile=/home/ahmed/Downloads/emg-api/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=emg-api
+
+[Install]
+WantedBy=multi-user.target
