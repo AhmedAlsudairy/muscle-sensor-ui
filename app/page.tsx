@@ -12,6 +12,7 @@ import {
   CircleDot,
   Database,
   Trash2,
+  Wifi,
 } from "lucide-react";
 import { MuscleWaveform } from "@/components/muscle-waveform";
 import { MuscleIndicator } from "@/components/muscle-indicator";
@@ -53,6 +54,7 @@ export default function MuscleSensorDashboard() {
   const [dbStatus, setDbStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [totalReadings, setTotalReadings] = useState(0);
   const [rawReadings, setRawReadings] = useState<Reading[]>([]);
+  const [lastReading, setLastReading] = useState<string | null>(null);
 
   // Setup database on mount
   useEffect(() => {
@@ -107,11 +109,20 @@ export default function MuscleSensorDashboard() {
         setTotalReadings(parseInt(data.stats.total_readings) || 0);
         if (data.stats.max_signal) setPeakValue(parseFloat(data.stats.max_signal));
         if (data.stats.avg_signal) setAvgValue(parseFloat(data.stats.avg_signal));
+        if (data.stats.last_reading) setLastReading(data.stats.last_reading);
       }
     } catch (error) {
       console.error("Failed to fetch readings:", error);
     }
   }, []);
+
+  const piStatus = (() => {
+    if (!lastReading) return "offline" as const;
+    const diffMs = Date.now() - new Date(lastReading).getTime();
+    if (diffMs < 10_000) return "live" as const;
+    if (diffMs < 60_000) return "delayed" as const;
+    return "offline" as const;
+  })();
 
   // Clear all readings
   const clearReadings = async () => {
@@ -193,6 +204,23 @@ export default function MuscleSensorDashboard() {
                 {dbStatus === "ready" ? `DB: ${totalReadings} readings` : 
                  dbStatus === "loading" ? "Connecting..." :
                  dbStatus === "error" ? "DB Error" : "DB Idle"}
+              </span>
+            </div>
+            {/* Pi / Arduino Live Status */}
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                piStatus === "live"
+                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400"
+                  : piStatus === "delayed"
+                  ? "border-amber-500/50 bg-amber-500/10 text-amber-400"
+                  : "border-red-500/50 bg-red-500/10 text-red-400"
+              }`}
+            >
+              <Wifi
+                className={`w-4 h-4 ${piStatus === "live" ? "animate-pulse" : ""}`}
+              />
+              <span className="text-sm font-medium">
+                {piStatus === "live" ? "Pi: Live" : piStatus === "delayed" ? "Pi: Delayed" : "Pi: Offline"}
               </span>
             </div>
             {/* Connection Status */}
@@ -355,12 +383,23 @@ export default function MuscleSensorDashboard() {
                 <span className="text-muted-foreground">Power</span>
                 <span className="text-foreground font-medium">12V DC</span>
               </div>
-              <div className="flex justify-between py-2">
+              <div className="flex justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">Database</span>
                 <span className={`font-medium ${
                   dbStatus === "ready" ? "text-emerald-400" : "text-amber-400"
                 }`}>
                   {dbStatus === "ready" ? "Neon PostgreSQL" : "Connecting..."}
+                </span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-muted-foreground">Pi API</span>
+                <span className={`font-medium flex items-center gap-1.5 ${
+                  piStatus === "live" ? "text-emerald-400" : piStatus === "delayed" ? "text-amber-400" : "text-red-400"
+                }`}>
+                  <span className={`inline-block w-2 h-2 rounded-full ${
+                    piStatus === "live" ? "bg-emerald-400 animate-pulse" : piStatus === "delayed" ? "bg-amber-400" : "bg-red-400"
+                  }`} />
+                  {piStatus === "live" ? "Streaming" : piStatus === "delayed" ? "Delayed" : "Offline"}
                 </span>
               </div>
             </div>
