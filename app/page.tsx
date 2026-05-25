@@ -153,6 +153,16 @@ export default function MuscleSensorDashboard() {
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
+      {/* Project Title Banner */}
+      <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 px-6 py-4 text-center">
+        <h1 className="text-xl md:text-2xl font-bold text-primary tracking-wide">
+          AI-Based Muscle Fatigue Detection using EMG and IoT
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Presented by&nbsp;<span className="font-semibold text-foreground">Al Zahraa Rashid</span>
+        </p>
+      </div>
+
       {/* Header */}
       <header className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
