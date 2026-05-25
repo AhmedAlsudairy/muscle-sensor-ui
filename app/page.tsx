@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Activity,
   Zap,
@@ -12,7 +12,6 @@ import {
   CircleDot,
   Database,
   Trash2,
-  Download,
 } from "lucide-react";
 import { MuscleWaveform } from "@/components/muscle-waveform";
 import { MuscleIndicator } from "@/components/muscle-indicator";
@@ -44,17 +43,16 @@ interface DbStats {
 }
 
 export default function MuscleSensorDashboard() {
-  const [signalStrength, setSignalStrength] = useState(25);
+  const [signalStrength, setSignalStrength] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
   const [historyData, setHistoryData] = useState<HistoryDataPoint[]>([]);
+  const [waveformData, setWaveformData] = useState<{ time: number; value: number }[]>([]);
   const [peakValue, setPeakValue] = useState(0);
   const [avgValue, setAvgValue] = useState(0);
   const [sessionTime, setSessionTime] = useState(0);
   const [dbStatus, setDbStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [totalReadings, setTotalReadings] = useState(0);
-  const [isSaving, setIsSaving] = useState(false);
   const [rawReadings, setRawReadings] = useState<Reading[]>([]);
-  const valuesRef = useRef<number[]>([]);
 
   // Setup database on mount
   useEffect(() => {
@@ -64,8 +62,7 @@ export default function MuscleSensorDashboard() {
         const response = await fetch("/api/setup", { method: "POST" });
         if (response.ok) {
           setDbStatus("ready");
-          // Load existing readings
-          loadReadings();
+          fetchReadings();
         } else {
           setDbStatus("error");
         }
@@ -77,16 +74,14 @@ export default function MuscleSensorDashboard() {
     setupDb();
   }, []);
 
-  // Load readings from database
-  const loadReadings = async () => {
+  // Fetch latest readings from the database
+  const fetchReadings = useCallback(async () => {
     try {
       const response = await fetch("/api/readings?limit=100");
       const data = await response.json();
       if (data.success && data.readings) {
-        // Store raw readings for table
         setRawReadings(data.readings);
-        
-        // Convert readings to history data
+
         const history: HistoryDataPoint[] = data.readings.map((r: Reading) => {
           const date = new Date(r.created_at);
           return {
@@ -95,54 +90,28 @@ export default function MuscleSensorDashboard() {
           };
         });
         setHistoryData(history.slice(-30));
+
+        // Build waveform data from DB readings (indexed 0‥n)
+        const wf = data.readings.map((r: Reading, i: number) => ({
+          time: i,
+          value: parseFloat(String(r.signal_percentage)),
+        }));
+        setWaveformData(wf.slice(-100));
+
+        // Latest reading → current signal
+        if (data.readings.length > 0) {
+          const latest: Reading = data.readings[data.readings.length - 1];
+          setSignalStrength(parseFloat(String(latest.signal_percentage)));
+        }
+
         setTotalReadings(parseInt(data.stats.total_readings) || 0);
-        
-        if (data.stats.max_signal) {
-          setPeakValue(parseFloat(data.stats.max_signal));
-        }
-        if (data.stats.avg_signal) {
-          setAvgValue(parseFloat(data.stats.avg_signal));
-        }
+        if (data.stats.max_signal) setPeakValue(parseFloat(data.stats.max_signal));
+        if (data.stats.avg_signal) setAvgValue(parseFloat(data.stats.avg_signal));
       }
     } catch (error) {
-      console.error("Failed to load readings:", error);
+      console.error("Failed to fetch readings:", error);
     }
-  };
-
-  // Get muscle status based on signal strength
-  const getMuscleStatus = useCallback((value: number): string => {
-    if (value < 30) return "relaxed";
-    if (value < 70) return "moderate";
-    return "contracted";
   }, []);
-
-  // Save reading to database
-  const saveReading = useCallback(async (value: number, peak: number, avg: number) => {
-    if (isSaving) return;
-    setIsSaving(true);
-    try {
-      const response = await fetch("/api/readings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          signal_value: value,
-          signal_percentage: value,
-          status: getMuscleStatus(value),
-          peak_value: peak,
-          average_value: avg,
-        }),
-      });
-      const data = await response.json();
-      if (data.success && data.reading) {
-        setRawReadings((prev) => [...prev, data.reading].slice(-100));
-      }
-      setTotalReadings((prev) => prev + 1);
-    } catch (error) {
-      console.error("Failed to save reading:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [isSaving, getMuscleStatus]);
 
   // Clear all readings
   const clearReadings = async () => {
@@ -150,80 +119,37 @@ export default function MuscleSensorDashboard() {
     try {
       await fetch("/api/readings", { method: "DELETE" });
       setHistoryData([]);
+      setWaveformData([]);
+      setSignalStrength(0);
       setPeakValue(0);
       setAvgValue(0);
       setTotalReadings(0);
       setRawReadings([]);
-      valuesRef.current = [];
     } catch (error) {
       console.error("Failed to clear readings:", error);
     }
   };
 
+  // Poll DB every 2 s while connected
   useEffect(() => {
     if (!isConnected || dbStatus !== "ready") return;
 
-    // Simulate signal strength changes
-    const signalInterval = setInterval(() => {
-      const newValue = Math.min(
-        100,
-        Math.max(
-          0,
-          signalStrength + Math.random() * 30 - 15 + Math.sin(Date.now() / 1000) * 10
-        )
-      );
-      setSignalStrength(newValue);
-
-      // Track values for statistics
-      valuesRef.current.push(newValue);
-      if (valuesRef.current.length > 100) {
-        valuesRef.current = valuesRef.current.slice(-100);
-      }
-
-      // Update peak
-      if (newValue > peakValue) {
-        setPeakValue(newValue);
-      }
-
-      // Update average
-      const avg =
-        valuesRef.current.reduce((a, b) => a + b, 0) / valuesRef.current.length;
-      setAvgValue(avg);
-    }, 100);
-
-    // Update history data and save to database every second
-    const historyInterval = setInterval(() => {
-      setHistoryData((prev) => {
-        const now = new Date();
-        const timeStr = `${now.getMinutes()}:${now.getSeconds().toString().padStart(2, "0")}`;
-        const newData = [
-          ...prev.slice(-29),
-          { time: timeStr, value: signalStrength },
-        ];
-        return newData;
-      });
-      
-      // Save to database every second
-      saveReading(signalStrength, peakValue, avgValue);
-    }, 1000);
-
-    // Session timer
-    const timerInterval = setInterval(() => {
-      setSessionTime((prev) => prev + 1);
-    }, 1000);
+    fetchReadings(); // immediate fetch on connect
+    const pollInterval = setInterval(fetchReadings, 2000);
+    const timerInterval = setInterval(() => setSessionTime((prev) => prev + 1), 1000);
 
     return () => {
-      clearInterval(signalInterval);
-      clearInterval(historyInterval);
+      clearInterval(pollInterval);
       clearInterval(timerInterval);
     };
-  }, [isConnected, dbStatus, signalStrength, peakValue, avgValue, saveReading]);
+  }, [isConnected, dbStatus, fetchReadings]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
+
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
@@ -323,7 +249,7 @@ export default function MuscleSensorDashboard() {
               </span>
             </div>
             <div className="h-48 md:h-64">
-              <MuscleWaveform />
+              <MuscleWaveform data={waveformData} />
             </div>
           </div>
 
