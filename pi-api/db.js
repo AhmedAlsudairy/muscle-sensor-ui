@@ -48,14 +48,62 @@ let _peak = 0;
 let _sum = 0;
 let _count = 0;
 
+// Write buffer — batch flush every FLUSH_INTERVAL ms to avoid hammering Neon
+const FLUSH_INTERVAL = 1000; // flush once per second
+const MAX_BUFFER = 1000;     // drop oldest if Pi is offline from DB too long
+let _buffer = [];
+let _flushTimer = null;
+
+// Circuit breaker — stop trying after repeated failures
+let _circuitOpen = false;
+let _circuitResetTimer = null;
+const CIRCUIT_RESET_MS = 30000; // retry DB after 30s
+
 function deriveStatus(pct) {
   if (pct < 30) return "relaxed";
   if (pct < 70) return "moderate";
   return "contracted";
 }
 
+async function _flushBuffer() {
+  _flushTimer = null;
+  if (_buffer.length === 0) return;
+  if (_circuitOpen) {
+    // Still tripping — reschedule check but don't insert
+    _scheduleFlush();
+    return;
+  }
+
+  const batch = _buffer.splice(0); // drain buffer atomically
+  try {
+    const placeholders = batch
+      .map((_, i) => `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`)
+      .join(", ");
+    const params = batch.flatMap((r) => [r.rawValue, r.pct, r.status, r.peak, r.avg]);
+    await pool.query(
+      `INSERT INTO muscle_readings (signal_value, signal_percentage, status, peak_value, average_value) VALUES ${placeholders}`,
+      params
+    );
+  } catch (err) {
+    console.error(`[DB] Flush failed (${batch.length} readings dropped):`, err.message);
+    // Open circuit — pause inserts for CIRCUIT_RESET_MS
+    _circuitOpen = true;
+    if (_circuitResetTimer) clearTimeout(_circuitResetTimer);
+    _circuitResetTimer = setTimeout(() => {
+      _circuitOpen = false;
+      console.log("[DB] Circuit reset — resuming inserts.");
+    }, CIRCUIT_RESET_MS);
+  }
+}
+
+function _scheduleFlush() {
+  if (_flushTimer) return;
+  _flushTimer = setTimeout(_flushBuffer, FLUSH_INTERVAL);
+}
+
 /**
- * Insert a single EMG reading into muscle_readings.
+ * Buffer an EMG reading; flushed to DB in batches every second.
+ * Returns a synthetic record immediately so SSE/REST don't need to wait.
  * @param {number} rawValue  0–1023
  */
 async function insertReading(rawValue) {
@@ -66,14 +114,13 @@ async function insertReading(rawValue) {
   const avg = parseFloat((_sum / _count).toFixed(2));
   const status = deriveStatus(pct);
 
-  const { rows } = await pool.query(
-    `INSERT INTO muscle_readings
-       (signal_value, signal_percentage, status, peak_value, average_value)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [rawValue, pct, status, _peak, avg]
-  );
-  return rows[0];
+  if (_buffer.length < MAX_BUFFER) {
+    _buffer.push({ rawValue, pct, status, peak: _peak, avg });
+    _scheduleFlush();
+  }
+
+  // Return synthetic record immediately — DB write happens in background
+  return { signal_value: rawValue, signal_percentage: pct, status, peak_value: _peak, average_value: avg, created_at: new Date().toISOString() };
 }
 
 /**
