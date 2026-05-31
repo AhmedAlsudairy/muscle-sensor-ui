@@ -1,40 +1,30 @@
-// gpio.js — LED + Buzzer control
+// gpio.js — LED + Buzzer control via pinctrl (Pi 5 / kernel 6.x compatible)
 // GPIO 14 = Red  LED
 // GPIO 15 = Green LED
 // GPIO 18 = Buzzer (active buzzer, HIGH = on)
 
-let Gpio;
+const { execSync } = require("child_process");
+
 let gpioAvailable = false;
 
+// Verify pinctrl exists and initialise all pins LOW
 try {
-  Gpio = require("onoff").Gpio;
+  execSync("which pinctrl", { stdio: "ignore" });
+  execSync("pinctrl set 14 op dl");
+  execSync("pinctrl set 15 op dl");
+  execSync("pinctrl set 18 op dl");
   gpioAvailable = true;
+  console.log("[GPIO] Ready. Red=GPIO14  Green=GPIO15  Buzzer=GPIO18");
 } catch (e) {
-  console.warn("[GPIO] onoff module not found — GPIO disabled.");
-}
-
-let redLed = null;
-let greenLed = null;
-let buzzer = null;
-
-if (gpioAvailable) {
-  try {
-    redLed   = new Gpio(14, "out");
-    greenLed = new Gpio(15, "out");
-    buzzer   = new Gpio(18, "out");
-    // Start with all off
-    redLed.writeSync(0);
-    greenLed.writeSync(0);
-    buzzer.writeSync(0);
-    console.log("[GPIO] Ready. Red=GPIO14  Green=GPIO15  Buzzer=GPIO18");
-  } catch (e) {
-    console.warn("[GPIO] Pin init failed:", e.message);
-    gpioAvailable = false;
-  }
+  console.warn("[GPIO] pinctrl not available — GPIO disabled.", e.message);
 }
 
 // Track current state to avoid redundant writes
 let _state = null;
+
+function _pin(num, high) {
+  execSync(`pinctrl set ${num} ${high ? "dh" : "dl"}`);
+}
 
 /**
  * Drive LEDs and buzzer based on EMG status.
@@ -51,18 +41,18 @@ function setGpioState(status) {
 
   try {
     if (status === "relaxed") {
-      greenLed.writeSync(1);
-      redLed.writeSync(0);
-      buzzer.writeSync(0);
+      _pin(15, true);   // green ON
+      _pin(14, false);  // red OFF
+      _pin(18, false);  // buzzer OFF
     } else if (status === "moderate") {
-      redLed.writeSync(1);
-      greenLed.writeSync(0);
-      buzzer.writeSync(0);
+      _pin(14, true);   // red ON
+      _pin(15, false);  // green OFF
+      _pin(18, false);  // buzzer OFF
     } else {
       // contracted
-      redLed.writeSync(1);
-      greenLed.writeSync(0);
-      buzzer.writeSync(1);
+      _pin(14, true);   // red ON
+      _pin(15, false);  // green OFF
+      _pin(18, true);   // buzzer ON
     }
     console.log(`[GPIO] → ${status}`);
   } catch (e) {
@@ -73,9 +63,9 @@ function setGpioState(status) {
 function cleanupGpio() {
   if (!gpioAvailable) return;
   try {
-    if (redLed)   { redLed.writeSync(0);   redLed.unexport(); }
-    if (greenLed) { greenLed.writeSync(0); greenLed.unexport(); }
-    if (buzzer)   { buzzer.writeSync(0);   buzzer.unexport(); }
+    _pin(14, false);
+    _pin(15, false);
+    _pin(18, false);
   } catch (_) { /* ignore */ }
 }
 
