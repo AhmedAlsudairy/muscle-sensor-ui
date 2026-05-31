@@ -124,6 +124,9 @@ export default function MuscleSensorDashboard() {
     return "offline" as const;
   })();
 
+  // Two-state muscle indicator: relaxed (<30%) = green, active (≥30%) = red
+  const muscleState: "relaxed" | "active" = signalStrength < 30 ? "relaxed" : "active";
+
   // Clear all readings
   const clearReadings = async () => {
     if (!confirm("Are you sure you want to clear all readings?")) return;
@@ -343,15 +346,67 @@ export default function MuscleSensorDashboard() {
 
         {/* Right Column - Muscle Indicator & Device Info */}
         <div className="space-y-6">
-          {/* Muscle Status */}
+          {/* Muscle State — two-LED indicator */}
           <div className="bg-card rounded-xl border border-border p-6">
             <div className="flex items-center gap-2 mb-6">
               <Activity className="w-5 h-5 text-primary" />
               <h2 className="text-lg font-semibold text-foreground">
-                Muscle Status
+                Muscle State
               </h2>
             </div>
-            <MuscleIndicator signalStrength={signalStrength} />
+
+            {/* LED circles */}
+            <div className="flex justify-center gap-10 mb-4">
+              {/* Green LED */}
+              <div className="flex flex-col items-center gap-3">
+                <div
+                  className={`w-20 h-20 rounded-full border-4 transition-all duration-300 ${
+                    muscleState === "relaxed"
+                      ? "bg-emerald-400 border-emerald-300 shadow-[0_0_28px_8px_rgba(52,211,153,0.55)]"
+                      : "bg-emerald-950 border-emerald-900/40"
+                  }`}
+                />
+                <span
+                  className={`text-sm font-semibold tracking-wide ${
+                    muscleState === "relaxed" ? "text-emerald-400" : "text-muted-foreground/40"
+                  }`}
+                >
+                  RELAXED
+                </span>
+              </div>
+
+              {/* Red LED */}
+              <div className="flex flex-col items-center gap-3">
+                <div
+                  className={`w-20 h-20 rounded-full border-4 transition-all duration-300 ${
+                    muscleState === "active"
+                      ? "bg-red-400 border-red-300 shadow-[0_0_28px_8px_rgba(248,113,113,0.55)]"
+                      : "bg-red-950 border-red-900/40"
+                  }`}
+                />
+                <span
+                  className={`text-sm font-semibold tracking-wide ${
+                    muscleState === "active" ? "text-red-400" : "text-muted-foreground/40"
+                  }`}
+                >
+                  ACTIVE
+                </span>
+              </div>
+            </div>
+
+            {/* State label */}
+            <div className="text-center">
+              <span
+                className={`inline-block px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  muscleState === "relaxed"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                {muscleState === "relaxed" ? "Muscle Relaxed" : "Muscle Active"}
+                {" — "}{signalStrength.toFixed(1)}%
+              </span>
+            </div>
           </div>
 
           {/* Device Information */}
