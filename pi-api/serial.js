@@ -2,6 +2,7 @@
 const { SerialPort } = require("serialport");
 const { ReadlineParser } = require("@serialport/parser-readline");
 const { insertReading } = require("./db");
+const { setGpioState } = require("./gpio");
 
 // EventEmitter so the API can push live readings via SSE
 const { EventEmitter } = require("events");
@@ -45,6 +46,8 @@ function startSerial(portPath, baudRate = 9600) {
 
     try {
       const row = await insertReading(raw);
+      // Drive LEDs + buzzer immediately (before DB flush)
+      setGpioState(row.status);
       // Notify SSE subscribers
       emitter.emit("reading", row);
     } catch (err) {
