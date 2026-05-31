@@ -475,15 +475,8 @@ export default function MuscleSensorDashboard() {
               </div>
               <div>
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted-foreground">Moderate</span>
-                  <span className="text-amber-400">30-70%</span>
-                </div>
-                <div className="h-2 bg-amber-500/30 rounded-full" />
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted-foreground">Contracted</span>
-                  <span className="text-red-400">70-100%</span>
+                  <span className="text-muted-foreground">Active</span>
+                  <span className="text-red-400">30-100%</span>
                 </div>
                 <div className="h-2 bg-red-500/30 rounded-full" />
               </div>
