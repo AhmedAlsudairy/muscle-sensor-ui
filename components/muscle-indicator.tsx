@@ -8,25 +8,25 @@ interface MuscleIndicatorProps {
 }
 
 export function MuscleIndicator({ signalStrength }: MuscleIndicatorProps) {
-  const [status, setStatus] = useState<"relaxed" | "moderate" | "contracted">(
-    "relaxed"
+  const [status, setStatus] = useState<"normal" | "moderate" | "fatigue">(
+    "normal"
   );
 
   useEffect(() => {
     if (signalStrength < 30) {
-      setStatus("relaxed");
+      setStatus("normal");
     } else if (signalStrength < 70) {
       setStatus("moderate");
     } else {
-      setStatus("contracted");
+      setStatus("fatigue");
     }
   }, [signalStrength]);
 
   const statusConfig = {
-    relaxed: {
+    normal: {
       color: "bg-emerald-500",
       textColor: "text-emerald-400",
-      label: "Relaxed",
+      label: "Normal",
       icon: Heart,
     },
     moderate: {
@@ -35,10 +35,10 @@ export function MuscleIndicator({ signalStrength }: MuscleIndicatorProps) {
       label: "Moderate Activity",
       icon: Activity,
     },
-    contracted: {
+    fatigue: {
       color: "bg-red-500",
       textColor: "text-red-400",
-      label: "Contracted",
+      label: "Fatigue",
       icon: Zap,
     },
   };
@@ -73,7 +73,7 @@ export function MuscleIndicator({ signalStrength }: MuscleIndicatorProps) {
         </div>
 
         {/* Pulse animation */}
-        {status !== "relaxed" && (
+        {status !== "normal" && (
           <div
             className={`absolute inset-0 w-32 h-32 rounded-full ${config.color} opacity-20 animate-ping`}
           />

@@ -1,145 +1,94 @@
-// Lightweight feedforward neural network for EMG muscle fatigue classification
-// Architecture: WINDOW_SIZE → 16 hidden (ReLU) → 2 output (softmax)
-// Class 0 = relaxed  |  Class 1 = active (moderate or contracted)
-// No external dependencies — runs entirely in the browser.
+// EMG Muscle Fatigue Classifier — utility module
+// Powered by brain.js (loaded dynamically client-side via AIPanel).
+//
+// Two classes:
+//   Class 0 = "Normal"  — low EMG activity  (signal_percentage < 30 %)
+//   Class 1 = "Fatigue" — elevated activity  (signal_percentage ≥ 30 %)
+//
+// Feature window: last WINDOW_SIZE readings, each normalised to [0, 1].
 
 export const WINDOW_SIZE = 20;
-export const CLASS_LABELS = ["Relaxed", "Active"] as const;
+export const CLASS_LABELS = ["Normal", "Fatigue"] as const;
+export type ClassLabel = (typeof CLASS_LABELS)[number];
 
-function rand(scale: number): number {
-  return (Math.random() * 2 - 1) * scale;
+/** One training sample in brain.js { input, output } format */
+export interface TrainingSample {
+  input: number[];
+  /** One-hot encoding: [1, 0] = Normal | [0, 1] = Fatigue */
+  output: number[];
 }
 
-function relu(x: number): number {
-  return x > 0 ? x : 0;
-}
-
-function softmax(x: number[]): number[] {
-  const m = Math.max(...x);
-  const e = x.map((v) => Math.exp(v - m));
-  const s = e.reduce((a, b) => a + b, 0);
-  return e.map((v) => v / s);
-}
-
-export class MuscleNet {
-  private w1: number[][];
-  private b1: number[];
-  private w2: number[][];
-  private b2: number[];
-
-  static readonly HIDDEN = 16;
-  static readonly OUTPUTS = 2;
-
-  constructor() {
-    const s1 = Math.sqrt(2 / WINDOW_SIZE);
-    const s2 = Math.sqrt(2 / MuscleNet.HIDDEN);
-    this.w1 = Array.from({ length: MuscleNet.HIDDEN }, () =>
-      Array.from({ length: WINDOW_SIZE }, () => rand(s1))
-    );
-    this.b1 = new Array(MuscleNet.HIDDEN).fill(0);
-    this.w2 = Array.from({ length: MuscleNet.OUTPUTS }, () =>
-      Array.from({ length: MuscleNet.HIDDEN }, () => rand(s2))
-    );
-    this.b2 = new Array(MuscleNet.OUTPUTS).fill(0);
-  }
-
-  /** Returns [P(relaxed), P(active)] for a normalised input window */
-  predict(window: number[]): [number, number] {
-    const hRaw = this.w1.map((row, i) =>
-      row.reduce((s, w, j) => s + w * window[j], 0) + this.b1[i]
-    );
-    const h = hRaw.map(relu);
-    const outRaw = this.w2.map((row, i) =>
-      row.reduce((s, w, j) => s + w * h[j], 0) + this.b2[i]
-    );
-    const p = softmax(outRaw);
-    return [p[0], p[1]];
-  }
-
-  /** Mini-batch SGD step. Returns loss and training accuracy. */
-  trainBatch(
-    X: number[][],
-    y: number[],
-    lr = 0.05
-  ): { loss: number; accuracy: number } {
-    let totalLoss = 0;
-    let correct = 0;
-
-    const dW1 = this.w1.map((r) => r.map(() => 0));
-    const db1 = new Array(MuscleNet.HIDDEN).fill(0);
-    const dW2 = this.w2.map((r) => r.map(() => 0));
-    const db2 = new Array(MuscleNet.OUTPUTS).fill(0);
-
-    for (let n = 0; n < X.length; n++) {
-      const x = X[n];
-      const label = y[n];
-
-      // Forward
-      const hRaw = this.w1.map((row, i) =>
-        row.reduce((s, w, j) => s + w * x[j], 0) + this.b1[i]
-      );
-      const h = hRaw.map(relu);
-      const outRaw = this.w2.map((row, i) =>
-        row.reduce((s, w, j) => s + w * h[j], 0) + this.b2[i]
-      );
-      const prob = softmax(outRaw);
-
-      totalLoss += -Math.log(Math.max(prob[label], 1e-7));
-      if (prob.indexOf(Math.max(...prob)) === label) correct++;
-
-      // Backprop — output (softmax + CE shortcut)
-      const dOut = prob.map((p, i) => p - (i === label ? 1 : 0));
-      for (let i = 0; i < MuscleNet.OUTPUTS; i++) {
-        db2[i] += dOut[i];
-        for (let j = 0; j < MuscleNet.HIDDEN; j++) dW2[i][j] += dOut[i] * h[j];
-      }
-
-      // Hidden layer
-      const dH = new Array(MuscleNet.HIDDEN).fill(0);
-      for (let j = 0; j < MuscleNet.HIDDEN; j++)
-        for (let i = 0; i < MuscleNet.OUTPUTS; i++) dH[j] += this.w2[i][j] * dOut[i];
-      const dHRelu = dH.map((v, i) => v * (hRaw[i] > 0 ? 1 : 0));
-
-      for (let i = 0; i < MuscleNet.HIDDEN; i++) {
-        db1[i] += dHRelu[i];
-        for (let j = 0; j < WINDOW_SIZE; j++) dW1[i][j] += dHRelu[i] * x[j];
-      }
-    }
-
-    const n = X.length;
-    for (let i = 0; i < MuscleNet.HIDDEN; i++) {
-      this.b1[i] -= (lr * db1[i]) / n;
-      for (let j = 0; j < WINDOW_SIZE; j++) this.w1[i][j] -= (lr * dW1[i][j]) / n;
-    }
-    for (let i = 0; i < MuscleNet.OUTPUTS; i++) {
-      this.b2[i] -= (lr * db2[i]) / n;
-      for (let j = 0; j < MuscleNet.HIDDEN; j++) this.w2[i][j] -= (lr * dW2[i][j]) / n;
-    }
-
-    return { loss: totalLoss / n, accuracy: correct / n };
-  }
-}
-
-/** Build a labelled dataset from DB readings */
+/**
+ * Build labelled brain.js training samples from database readings.
+ *
+ * Labelling rule (per-window):
+ *   signal_percentage < 30  →  Normal  (label 0)
+ *   signal_percentage ≥ 30  →  Fatigue (label 1)
+ */
 export function buildDataset(
   readings: { signal_percentage: number; status: string }[]
-): { X: number[][]; y: number[] } {
-  const X: number[][] = [];
-  const y: number[] = [];
+): { samples: TrainingSample[]; labels: number[] } {
+  const samples: TrainingSample[] = [];
+  const labels: number[] = [];
 
   for (let i = WINDOW_SIZE; i < readings.length; i++) {
+    // Sliding window of normalised EMG values
     const window = readings
       .slice(i - WINDOW_SIZE, i)
       .map((r) => parseFloat(String(r.signal_percentage)) / 100);
-    const label = readings[i].status === "relaxed" ? 0 : 1;
-    X.push(window);
-    y.push(label);
+
+    // Fatigue when the current reading crosses the 30 % threshold
+    const pct = parseFloat(String(readings[i].signal_percentage));
+    const isFatigue = pct >= 30;
+    const label = isFatigue ? 1 : 0;
+
+    samples.push({
+      input: window,
+      output: isFatigue ? [0, 1] : [1, 0], // one-hot: [P(Normal), P(Fatigue)]
+    });
+    labels.push(label);
   }
 
-  return { X, y };
+  return { samples, labels };
 }
 
-/** Fisher-Yates shuffle on indices */
+/**
+ * Compute binary classification metrics.
+ * Positive class = Fatigue (label 1).
+ *
+ * Returns:
+ *   accuracy  — (TP + TN) / N
+ *   precision — TP / (TP + FP)
+ *   recall    — TP / (TP + FN)
+ *   f1        — 2 · precision · recall / (precision + recall)
+ */
+export function computeMetrics(
+  predictions: number[],
+  labels: number[]
+): { accuracy: number; f1: number; precision: number; recall: number } {
+  let tp = 0, fp = 0, fn = 0, tn = 0;
+
+  for (let i = 0; i < predictions.length; i++) {
+    const pred = predictions[i];   // 0 = Normal, 1 = Fatigue
+    const actual = labels[i];
+    if (pred === 1 && actual === 1) tp++;
+    else if (pred === 1 && actual === 0) fp++;
+    else if (pred === 0 && actual === 1) fn++;
+    else tn++;
+  }
+
+  const total = tp + tn + fp + fn;
+  const accuracy  = total > 0        ? (tp + tn) / total                           : 0;
+  const precision = tp + fp > 0      ? tp / (tp + fp)                              : 0;
+  const recall    = tp + fn > 0      ? tp / (tp + fn)                              : 0;
+  const f1        = precision + recall > 0
+    ? (2 * precision * recall) / (precision + recall)
+    : 0;
+
+  return { accuracy, f1, precision, recall };
+}
+
+/** Fisher-Yates shuffle returning a shuffled index array */
 export function shuffleIndices(n: number): number[] {
   const idx = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i--) {

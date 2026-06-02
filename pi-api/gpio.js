@@ -28,11 +28,11 @@ function _pin(num, high) {
 
 /**
  * Drive LEDs and buzzer based on EMG status.
- *   relaxed   (<30%)  → green ON,  red OFF, buzzer OFF
+ *   normal    (<30%)  → green ON,  red OFF, buzzer OFF
  *   moderate  (30-70%)→ red ON,    green OFF, buzzer OFF
- *   contracted(>70%)  → red ON,    green OFF, buzzer ON
+ *   fatigue   (>70%)  → red ON,    green OFF, buzzer ON
  *
- * @param {"relaxed"|"moderate"|"contracted"} status
+ * @param {"normal"|"moderate"|"fatigue"} status
  */
 function setGpioState(status) {
   if (!gpioAvailable) return;
@@ -40,7 +40,7 @@ function setGpioState(status) {
   _state = status;
 
   try {
-    if (status === "relaxed") {
+    if (status === "normal") {
       _pin(15, true);   // green ON
       _pin(14, false);  // red OFF
       _pin(18, false);  // buzzer OFF
@@ -49,7 +49,7 @@ function setGpioState(status) {
       _pin(15, false);  // green OFF
       _pin(18, false);  // buzzer OFF
     } else {
-      // contracted
+      // fatigue
       _pin(14, true);   // red ON
       _pin(15, false);  // green OFF
       _pin(18, true);   // buzzer ON

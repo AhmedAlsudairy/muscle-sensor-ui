@@ -60,9 +60,9 @@ let _circuitResetTimer = null;
 const CIRCUIT_RESET_MS = 30000; // retry DB after 30s
 
 function deriveStatus(pct) {
-  if (pct < 30) return "relaxed";
+  if (pct < 30) return "normal";
   if (pct < 70) return "moderate";
-  return "contracted";
+  return "fatigue";
 }
 
 async function _flushBuffer() {

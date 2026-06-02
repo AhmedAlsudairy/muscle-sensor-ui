@@ -125,8 +125,8 @@ export default function MuscleSensorDashboard() {
     return "offline" as const;
   })();
 
-  // Two-state muscle indicator: relaxed (<30%) = green, active (≥30%) = red
-  const muscleState: "relaxed" | "active" = signalStrength < 30 ? "relaxed" : "active";
+  // Two-state muscle indicator: normal (<30%) = green, fatigue (≥30%) = red
+  const muscleState: "normal" | "fatigue" = signalStrength < 30 ? "normal" : "fatigue";
 
   // Clear all readings
   const clearReadings = async () => {
@@ -365,17 +365,17 @@ export default function MuscleSensorDashboard() {
               <div className="flex flex-col items-center gap-3">
                 <div
                   className={`w-20 h-20 rounded-full border-4 transition-all duration-300 ${
-                    muscleState === "relaxed"
+                    muscleState === "normal"
                       ? "bg-emerald-400 border-emerald-300 shadow-[0_0_28px_8px_rgba(52,211,153,0.55)]"
                       : "bg-emerald-950 border-emerald-900/40"
                   }`}
                 />
                 <span
                   className={`text-sm font-semibold tracking-wide ${
-                    muscleState === "relaxed" ? "text-emerald-400" : "text-muted-foreground/40"
+                    muscleState === "normal" ? "text-emerald-400" : "text-muted-foreground/40"
                   }`}
                 >
-                  RELAXED
+                  NORMAL
                 </span>
               </div>
 
@@ -383,17 +383,17 @@ export default function MuscleSensorDashboard() {
               <div className="flex flex-col items-center gap-3">
                 <div
                   className={`w-20 h-20 rounded-full border-4 transition-all duration-300 ${
-                    muscleState === "active"
+                    muscleState === "fatigue"
                       ? "bg-red-400 border-red-300 shadow-[0_0_28px_8px_rgba(248,113,113,0.55)]"
                       : "bg-red-950 border-red-900/40"
                   }`}
                 />
                 <span
                   className={`text-sm font-semibold tracking-wide ${
-                    muscleState === "active" ? "text-red-400" : "text-muted-foreground/40"
+                    muscleState === "fatigue" ? "text-red-400" : "text-muted-foreground/40"
                   }`}
                 >
-                  ACTIVE
+                  FATIGUE
                 </span>
               </div>
             </div>
@@ -402,12 +402,12 @@ export default function MuscleSensorDashboard() {
             <div className="text-center">
               <span
                 className={`inline-block px-4 py-1.5 rounded-full text-sm font-medium border ${
-                  muscleState === "relaxed"
+                  muscleState === "normal"
                     ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
                     : "bg-red-500/10 border-red-500/30 text-red-400"
                 }`}
               >
-                {muscleState === "relaxed" ? "Muscle Relaxed" : "Muscle Active"}
+                {muscleState === "normal" ? "Muscle Normal" : "Muscle Fatigue"}
                 {" — "}{signalStrength.toFixed(1)}%
               </span>
             </div>
