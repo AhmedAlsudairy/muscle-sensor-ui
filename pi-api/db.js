@@ -1,4 +1,8 @@
 // db.js — Neon DB connection + schema setup (using pg for Raspberry Pi)
+// Force IPv4 DNS — Pi has no IPv6 route; must be set before pg connects
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+
 const { Pool } = require("pg");
 require("dotenv").config();
 
