@@ -8,6 +8,7 @@ import {
   WINDOW_SIZE,
   CLASS_LABELS,
   computeMetrics,
+  MLP,
   type TrainingSample,
 } from "@/lib/neural-net";
 
@@ -27,8 +28,7 @@ const TOTAL_EPOCHS = 100;
 
 export function AIPanel({ readings }: AIPanelProps) {
   const [mode, setMode] = useState<Mode>("idle");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const modelRef = useRef<any>(null);
+  const modelRef = useRef<MLP | null>(null);
   const [epoch, setEpoch] = useState(0);
   const [valAcc, setValAcc] = useState<number | null>(null);
   const [f1Score, setF1Score] = useState<number | null>(null);
@@ -43,7 +43,6 @@ export function AIPanel({ readings }: AIPanelProps) {
       .slice(-WINDOW_SIZE)
       .map((r) => parseFloat(String(r.signal_percentage)) / 100);
     const output = modelRef.current.run(win);
-    // output is a Float32Array: [P(Normal), P(Fatigue)]
     setProbs([output[0] ?? 0, output[1] ?? 0]);
   }, [readings, mode]);
 
@@ -63,14 +62,7 @@ export function AIPanel({ readings }: AIPanelProps) {
     const valSamples:   TrainingSample[] = idx.slice(split).map((i) => samples[i]);
     const valLabels:    number[]         = idx.slice(split).map((i) => labels[i]);
 
-    // Dynamic import keeps brain.js out of the server bundle entirely
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const brain = (await import("brain.js")) as any;
-    const net = new brain.NeuralNetwork({
-      hiddenLayers: [16],
-      activation: "relu",
-      learningRate: 0.05,
-    });
+    const net = new MLP(WINDOW_SIZE, 16, 2);
 
     // trainAsync yields to the browser event loop so the UI stays responsive
     await net.trainAsync(trainSamples, {
@@ -90,7 +82,7 @@ export function AIPanel({ readings }: AIPanelProps) {
     // Evaluate on the held-out validation set
     const preds = valSamples.map((s) => {
       const out = net.run(s.input);
-      return (out[1] ?? 0) >= (out[0] ?? 0) ? 1 : 0; // 1 = Fatigue
+      return out[1] >= out[0] ? 1 : 0; // 1 = Fatigue
     });
 
     const metrics = computeMetrics(preds, valLabels);
@@ -121,7 +113,7 @@ export function AIPanel({ readings }: AIPanelProps) {
         <div className="flex items-center gap-2">
           <Brain className="w-5 h-5 text-primary" />
           <h2 className="text-lg font-semibold text-foreground">AI Fatigue Classifier</h2>
-          <span className="text-xs text-muted-foreground font-normal">(brain.js Neural Network)</span>
+          <span className="text-xs text-muted-foreground font-normal">(Neural Network)</span>
         </div>
         <div className="flex items-center gap-2">
           {mode !== "training" && (
@@ -234,7 +226,7 @@ export function AIPanel({ readings }: AIPanelProps) {
             />
           </div>
           <p className="text-xs text-muted-foreground text-center mt-1.5">
-            Training on {readings.length} samples · {WINDOW_SIZE}-input → 16 hidden → 2 output (brain.js)
+            Training on {readings.length} samples · {WINDOW_SIZE}-input → 16 hidden → 2 output
           </p>
         </div>
       )}
