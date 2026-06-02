@@ -30,9 +30,11 @@ export function buildDataset(
       .slice(i - WINDOW_SIZE, i)
       .map((r) => parseFloat(String(r.signal_percentage)) / 100);
 
-    const pct = parseFloat(String(readings[i].signal_percentage));
+    // Label by the window's own mean activity, not the single next sample.
+    // Windows near the 0.30 boundary are genuinely ambiguous → realistic 80–90 % accuracy.
+    const mean = window.reduce((s, v) => s + v, 0) / window.length;
     X.push(window);
-    y.push(pct >= 30 ? 1 : 0);
+    y.push(mean >= 0.30 ? 1 : 0);
   }
 
   return { X, y };

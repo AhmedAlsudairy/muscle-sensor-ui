@@ -68,6 +68,9 @@ export function AIPanel({ readings }: AIPanelProps) {
     const { X, y } = buildDataset(readings);
     if (X.length < 20) { setMode("idle"); return; }
 
+    // Both classes must be present — warn-and-bail if data is all one class
+    if (!y.some(v => v === 0) || !y.some(v => v === 1)) { setMode("idle"); return; }
+
     // 80 / 20 train / validation split
     const idx = shuffleIndices(X.length);
     const split = Math.floor(idx.length * 0.8);
@@ -76,41 +79,67 @@ export function AIPanel({ readings }: AIPanelProps) {
     const Xval = idx.slice(split).map((i) => X[i]);
     const yval = idx.slice(split).map((i) => y[i]);
 
-    // Tensors — 1D CNN expects [batch, timesteps, features]
-    const xTrain = tf.tensor3d(Xtr.map((row: number[]) => row.map((v: number) => [v])));
-    const yTrain = tf.oneHot(tf.tensor1d(ytr, "int32"), 2).toFloat();
-    const xVal   = tf.tensor3d(Xval.map((row: number[]) => row.map((v: number) => [v])));
-    const yVal   = tf.oneHot(tf.tensor1d(yval, "int32"), 2).toFloat();
+    // Gaussian noise augmentation (σ ≈ 0.03) — prevents trivial memorisation on small datasets
+    const noisy: number[][] = Xtr.map((row: number[]) =>
+      row.map((v: number) => Math.max(0, Math.min(1, v + (Math.random() - 0.5) * 0.06)))
+    );
+    const Xtr_aug = [...Xtr, ...noisy];
+    const ytr_aug = [...ytr, ...ytr];
 
-    // 1D CNN: Conv1D(8,k=3,relu) → MaxPool(2) → Flatten → Dense(16,relu) → Dropout(0.25) → Dense(2,softmax)
+    // Inverse-frequency sample weights — keeps F1 reliable when classes are skewed
+    const n0 = ytr_aug.filter(v => v === 0).length;
+    const n1 = ytr_aug.filter(v => v === 1).length;
+    const tot = n0 + n1;
+    const w0 = tot / (2 * Math.max(n0, 1));
+    const w1 = tot / (2 * Math.max(n1, 1));
+
+    // Tensors — 1D CNN expects [batch, timesteps, features]
+    const xTrain = tf.tensor3d(Xtr_aug.map((row: number[]) => row.map((v: number) => [v])));
+    const yTrain = tf.tensor1d(ytr_aug, "int32");  // integer labels for sparseCategoricalCrossentropy
+    const sampleWeights = tf.tensor1d(ytr_aug.map(v => v === 0 ? w0 : w1));
+    const xVal   = tf.tensor3d(Xval.map((row: number[]) => row.map((v: number) => [v])));
+    const yVal   = tf.tensor1d(yval, "int32");
+
+    // 1D CNN with L2 regularisation — curbs overfitting on small EMG datasets
     const model = tf.sequential({
       layers: [
-        tf.layers.conv1d({ inputShape: [WINDOW_SIZE, 1], filters: 8, kernelSize: 3, activation: "relu" }),
+        tf.layers.conv1d({ inputShape: [WINDOW_SIZE, 1], filters: 8, kernelSize: 3, activation: "relu",
+          kernelRegularizer: tf.regularizers.l2({ l2: 0.001 }) }),
         tf.layers.maxPooling1d({ poolSize: 2 }),
         tf.layers.flatten(),
-        tf.layers.dense({ units: 16, activation: "relu" }),
-        tf.layers.dropout({ rate: 0.25 }),
+        tf.layers.dense({ units: 16, activation: "relu",
+          kernelRegularizer: tf.regularizers.l2({ l2: 0.001 }) }),
+        tf.layers.dropout({ rate: 0.3 }),
         tf.layers.dense({ units: 2, activation: "softmax" }),
       ],
     });
 
     model.compile({
-      optimizer: tf.train.adam(0.01),
-      loss: "categoricalCrossentropy",
+      optimizer: tf.train.adam(0.005),
+      loss: "sparseCategoricalCrossentropy",
       metrics: ["accuracy"],
     });
+
+    // Early stopping — halts training when val_acc stops improving (patience = 8 epochs)
+    let bestValAcc = 0;
+    let noImprove = 0;
+    const PATIENCE = 8;
 
     await model.fit(xTrain, yTrain, {
       epochs: TOTAL_EPOCHS,
       validationData: [xVal, yVal],
+      sampleWeight: sampleWeights,
       batchSize: 16,
       shuffle: true,
       callbacks: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onEpochEnd: async (ep: number, logs: any) => {
-          if (stopRef.current) model.stopTraining = true;
+          if (stopRef.current) { model.stopTraining = true; return; }
           setEpoch(ep + 1);
           setTrainLoss(parseFloat((logs?.loss ?? 0).toFixed(4)));
+          const va: number = logs?.val_acc ?? 0;
+          if (va > bestValAcc + 0.001) { bestValAcc = va; noImprove = 0; }
+          else if (++noImprove >= PATIENCE) { model.stopTraining = true; }
         },
       },
     });
@@ -133,7 +162,7 @@ export function AIPanel({ readings }: AIPanelProps) {
       setMode("idle");
     }
 
-    xTrain.dispose(); yTrain.dispose(); xVal.dispose(); yVal.dispose();
+    xTrain.dispose(); yTrain.dispose(); xVal.dispose(); yVal.dispose(); sampleWeights.dispose();
   }, [readings]);
 
   const reset = () => {
