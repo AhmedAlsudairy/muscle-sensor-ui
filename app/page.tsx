@@ -17,7 +17,6 @@ import {
 import { MuscleWaveform } from "@/components/muscle-waveform";
 import { MuscleIndicator } from "@/components/muscle-indicator";
 import { StatsCard } from "@/components/stats-card";
-import { HistoryChart } from "@/components/history-chart";
 import { AIPanel } from "@/components/ai-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
 
@@ -326,24 +325,6 @@ export default function MuscleSensorDashboard() {
             />
           </div>
 
-          {/* History Chart */}
-          <div className="bg-card rounded-xl border border-border p-4 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                <h2 className="text-lg font-semibold text-foreground">
-                  Signal History
-                </h2>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                Last 30 readings
-              </span>
-            </div>
-            <div className="h-48 md:h-56">
-              <HistoryChart data={historyData} />
-            </div>
-          </div>
-
           {/* AI Fatigue Classifier */}
           <AIPanel readings={rawReadings} />
 
@@ -466,31 +447,8 @@ export default function MuscleSensorDashboard() {
               </div>
             </div>
           </div>
-
-          {/* Threshold Settings */}
-          <div className="bg-card rounded-xl border border-border p-6">
-            <h2 className="text-lg font-semibold text-foreground mb-4">
-              Threshold Levels
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted-foreground">Relaxed</span>
-                  <span className="text-emerald-400">0-30%</span>
-                </div>
-                <div className="h-2 bg-emerald-500/30 rounded-full" />
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted-foreground">Active</span>
-                  <span className="text-red-400">30-100%</span>
-                </div>
-                <div className="h-2 bg-red-500/30 rounded-full" />
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
+    </div>
     </div>
   );
 }
