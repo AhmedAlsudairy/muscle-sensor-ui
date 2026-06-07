@@ -18,7 +18,6 @@ import { MuscleWaveform } from "@/components/muscle-waveform";
 import { MuscleIndicator } from "@/components/muscle-indicator";
 import { StatsCard } from "@/components/stats-card";
 import { HistoryChart } from "@/components/history-chart";
-import { ReadingsTable } from "@/components/readings-table";
 import { AIPanel } from "@/components/ai-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
 
@@ -490,24 +489,6 @@ export default function MuscleSensorDashboard() {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Raw Database Readings Table */}
-      <div className="mt-6 bg-card rounded-xl border border-border p-4 md:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Database className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">
-              Raw Database Readings
-            </h2>
-          </div>
-          <span className="text-xs text-muted-foreground">
-            Last {rawReadings.length} records from database
-          </span>
-        </div>
-        <div className="max-h-96 overflow-y-auto">
-          <ReadingsTable readings={[...rawReadings].reverse()} />
         </div>
       </div>
     </div>
