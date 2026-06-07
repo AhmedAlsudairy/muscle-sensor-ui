@@ -18,6 +18,12 @@ export interface ScalerParams {
 }
 
 export interface EvaluationResults {
+  data_split: {
+    train_pct: number;
+    test_pct: number;
+    stratified: boolean;
+    random_state: number;
+  };
   dataset: {
     url: string;
     subjects: number;
@@ -32,15 +38,29 @@ export interface EvaluationResults {
   cnn_model: {
     architecture: string;
     input_shape: string;
+    optimizer: string;
     expected_accuracy: string;
     expected_auc: string;
     training_epochs: number;
     note: string;
+    window_size?: number;
+    sample_rate_hz?: number;
+    accuracy?: number | null;
+    auc?: number | null;
+    precision_fresh?: number | null;
+    recall_fresh?: number | null;
+    f1_fresh?: number | null;
+    precision_fatigued?: number | null;
+    recall_fatigued?: number | null;
+    f1_fatigued?: number | null;
+    early_stopping_patience?: number;
+    regularization?: string;
   };
   loso_cv: {
     method: string;
     mean_accuracy: number;
     std: number;
+    model: string;
   };
 }
 

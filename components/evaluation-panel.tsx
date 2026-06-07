@@ -87,6 +87,8 @@ export function EvaluationPanel() {
     logistic_regression: "Logistic Reg.",
   };
 
+  const cnnHasMetrics = evalData?.cnn_model?.accuracy != null;
+
   return (
     <div className="bg-card rounded-xl border border-border p-6">
       {/* Header */}
@@ -215,20 +217,48 @@ export function EvaluationPanel() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-center">
-              <p className="text-xs text-muted-foreground mb-1">Expected Accuracy</p>
-              <p className="text-xl font-bold text-blue-400">
-                {evalData.cnn_model.expected_accuracy}
-              </p>
-            </div>
-            <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3 text-center">
-              <p className="text-xs text-muted-foreground mb-1">Expected AUC-ROC</p>
-              <p className="text-xl font-bold text-purple-400">
-                {evalData.cnn_model.expected_auc}
-              </p>
-            </div>
-          </div>
+          {/* CNN Performance Metrics */}
+          {evalData.cnn_model.accuracy != null ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Accuracy</p>
+                  <p className="text-xl font-bold text-blue-400">
+                    {((evalData.cnn_model.accuracy || 0) * 100).toFixed(1)}%
+                  </p>
+                </div>
+                <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">AUC-ROC</p>
+                  <p className="text-xl font-bold text-purple-400">
+                    {((evalData.cnn_model.auc || 0) * 100).toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+              <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">1D-CNN — Precision / Recall / F1 (Fatigued Class)</p>
+                <MetricsBar label="Precision" value={evalData.cnn_model.precision_fatigued || 0} color="#3b82f6" />
+                <MetricsBar label="Recall" value={evalData.cnn_model.recall_fatigued || 0} color="#22c55e" />
+                <MetricsBar label="F1 Score" value={evalData.cnn_model.f1_fatigued || 0} color="#a855f7" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Expected Accuracy</p>
+                  <p className="text-xl font-bold text-blue-400">
+                    {evalData.cnn_model.expected_accuracy}
+                  </p>
+                </div>
+                <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Expected AUC-ROC</p>
+                  <p className="text-xl font-bold text-purple-400">
+                    {evalData.cnn_model.expected_auc}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
@@ -245,6 +275,21 @@ export function EvaluationPanel() {
               <p className="text-xs text-muted-foreground">Patience</p>
               <p className="text-sm font-medium text-foreground mt-0.5">15</p>
             </div>
+          </div>
+
+          <div className="bg-secondary/50 rounded-lg p-3 space-y-1">
+            <p className="text-xs font-medium text-foreground mb-1">Training Config</p>
+            <p className="text-xs text-muted-foreground">
+              Optimizer: <span className="font-mono text-foreground">{evalData.cnn_model.optimizer}</span>
+            </p>
+            {evalData.cnn_model.regularization && (
+              <p className="text-xs text-muted-foreground">
+                Regularization: <span className="font-mono text-foreground">{evalData.cnn_model.regularization}</span>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Split: <span className="font-mono text-foreground">75% Train / 25% Test (stratified, seed=42)</span>
+            </p>
           </div>
 
           <p className="text-xs text-muted-foreground bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
@@ -304,6 +349,22 @@ export function EvaluationPanel() {
                     </tr>
                   );
                 })}
+
+                {/* CNN row — shown when metrics are available */}
+                {cnnHasMetrics && evalData?.cnn_model && (
+                  <tr className="border-b border-border/50 bg-cyan-500/5">
+                    <td className="py-2 text-foreground flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      1D-CNN
+                      <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-400">CNN</span>
+                    </td>
+                    <td className="py-2 text-right font-mono">{((evalData.cnn_model.accuracy || 0) * 100).toFixed(1)}%</td>
+                    <td className="py-2 text-right font-mono">{((evalData.cnn_model.auc || 0) * 100).toFixed(1)}%</td>
+                    <td className="py-2 text-right font-mono">{((evalData.cnn_model.precision_fatigued || 0) * 100).toFixed(1)}%</td>
+                    <td className="py-2 text-right font-mono">{((evalData.cnn_model.recall_fatigued || 0) * 100).toFixed(1)}%</td>
+                    <td className="py-2 text-right font-mono">{((evalData.cnn_model.f1_fatigued || 0) * 100).toFixed(1)}%</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -327,6 +388,19 @@ export function EvaluationPanel() {
                 </div>
               );
             })}
+
+            {/* CNN bar — shown when metrics are available */}
+            {cnnHasMetrics && evalData?.cnn_model && (
+              <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  1D-CNN
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400">CNN</span>
+                </p>
+                <MetricsBar label="Precision" value={evalData.cnn_model.precision_fatigued || 0} color="#3b82f6" />
+                <MetricsBar label="Recall" value={evalData.cnn_model.recall_fatigued || 0} color="#22c55e" />
+                <MetricsBar label="F1 Score" value={evalData.cnn_model.f1_fatigued || 0} color="#a855f7" />
+              </div>
+            )}
           </div>
 
           {/* LOSO CV */}

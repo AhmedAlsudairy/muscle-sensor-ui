@@ -59,17 +59,25 @@
     }
   },
   "cnn_model": {
-    "architecture": "1D-CNN: Conv1D(16)→MaxPool→Conv1D(32)→MaxPool→Conv1D(64)→GlobalAvgPool→Dense(32)→Dropout→Dense(2)→Softmax",
-    "input_shape": "(400 timesteps, 1 channel)",
-    "optimizer": "Adam(lr=0.001), L2=0.001, Dropout 0.3/0.2",
-    "expected_accuracy": "72-78% on held-out 25% test set",
-    "expected_auc": "0.80-0.85",
+    "architecture": "Conv1D(16, k5)→MP2→Conv1D(32, k5)→MP2→Conv1D(64, k3)→GAP→Dense(32)→Drop→Dense(2)→Softmax",
+    "input_shape": "(400, 1)",
+    "window_size": 400,
+    "sample_rate_hz": 200,
+    "optimizer": "Adam(lr=0.001), L2=0.001, Dropout(0.3, 0.2)",
+    "regularization": "L2(0.001) + Dropout(0.3, 0.2)",
     "training_epochs": 100,
     "early_stopping_patience": 15,
+    "expected_accuracy": "72-78%",
+    "expected_auc": "0.80-0.85",
+    "accuracy": null,
+    "auc": null,
+    "precision_fresh": null,
+    "recall_fresh": null,
+    "f1_fresh": null,
     "precision_fatigued": null,
     "recall_fatigued": null,
     "f1_fatigued": null,
-    "note": "Pretrained on Zenodo EMG Fatigue Dataset. Run: python ml/train_model.py --export to generate exact weights."
+    "note": "Run `python ml/train_model.py --export` to train 1D-CNN and populate actual metrics. Current values are from the Zenodo EMG Fatigue Dataset baseline."
   },
   "loso_cv": {
     "method": "Leave-One-Subject-Out (15 folds)",
