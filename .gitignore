@@ -18,5 +18,6 @@ node_modules
 *.tsbuildinfo
 ml/emg_fatigue_data/
 ml/*.pkl
+ml/*.h5
 ml/emg_fatigue.zip
 public/models/plots/

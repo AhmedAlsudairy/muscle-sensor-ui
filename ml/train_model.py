@@ -666,6 +666,14 @@ def save_feature_artifacts(feature_results, scaler):
 
 
 def save_cnn_tfjs(model, cnn_metrics):
+    """Save CNN model in Keras (.h5) and TF.js formats."""
+    # Save as Keras H5
+    h5_path = "emg_cnn_model.h5"
+    model.save(h5_path)
+    sz = os.path.getsize(h5_path) / 1024
+    print(f"[OK] CNN model → {h5_path} ({sz:.1f} KB)")
+
+    # Save as TF.js Layers
     try:
         import tensorflowjs as tfjs
     except ImportError:
