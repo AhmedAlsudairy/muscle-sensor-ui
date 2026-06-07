@@ -1,7 +1,32 @@
 {
-  "description": "StandardScaler parameters for EMG feature normalization. Extract 8 features from a raw EMG window, then scale using: normalized = (raw - mean) / scale before passing to the feature-based model.",
-  "feature_names": ["RMS", "MAV", "ZCR", "MDF", "MNF", "Power", "SM1", "SM2"],
-  "mean": [45.32, 33.18, 0.691, 67.43, 62.81, 2140.56, 81.75, 6905.42],
-  "scale": [18.47, 13.95, 0.042, 4.82, 4.37, 1280.33, 3.92, 1050.68],
-  "note": "These are approximate values from the Zenodo EMG Fatigue Dataset. Run ml/train_model.py to compute exact values from the full dataset."
+  "mean": [
+    40.54924242905285,
+    32.18502380411,
+    0.6024981031866461,
+    66.45129931714719,
+    63.068862173432095,
+    1749.0727739629253,
+    80.9590324437494,
+    5799.418281882359
+  ],
+  "scale": [
+    10.8288915628284,
+    8.978109080843488,
+    0.047063272598296645,
+    7.692602883709546,
+    5.029918511045089,
+    980.0362931880406,
+    6.479568772528506,
+    766.4904953123462
+  ],
+  "feature_names": [
+    "RMS",
+    "MAV",
+    "ZCR",
+    "MDF",
+    "MNF",
+    "Power",
+    "SM1",
+    "SM2"
+  ]
 }

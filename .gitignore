@@ -16,3 +16,7 @@ node_modules
 .vercel
 .env.local
 *.tsbuildinfo
+ml/emg_fatigue_data/
+ml/*.pkl
+ml/emg_fatigue.zip
+public/models/plots/

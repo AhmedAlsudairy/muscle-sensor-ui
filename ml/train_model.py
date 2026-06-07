@@ -42,7 +42,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# ── Configuration ──────────────────────────────────────────────────────────
+# -- Configuration ---------------------------------------------------------
 
 FS = 200
 WINDOW_SEC = 2
@@ -70,7 +70,7 @@ SCALER_PATH = "../public/models/scaler_params.json"
 EVAL_PATH = "../public/models/evaluation_results.json"
 
 
-# ── Download Dataset ──────────────────────────────────────────────────────
+#─ Download Dataset ──────────────────────────────────────────────────────
 
 def download_dataset():
     if os.path.exists(DATA_DIR) and len(glob.glob(f"{DATA_DIR}/**/*.txt", recursive=True)) > 0:
@@ -90,7 +90,7 @@ def download_dataset():
     print("[OK] Downloaded and extracted")
 
 
-# ── Signal Processing ─────────────────────────────────────────────────────
+#─ Signal Processing ─────────────────────────────────────────────────────
 
 def bandpass_filter(data, fs=FS, low=LOW_CUTOFF, high=HIGH_CUTOFF):
     nyquist = fs / 2
@@ -141,7 +141,7 @@ def load_emg_file(filepath):
     return np.loadtxt(filepath, skiprows=start_row)
 
 
-# ── Data Processing Pipelines ─────────────────────────────────────────────
+#─ Data Processing Pipelines ─────────────────────────────────────────────
 
 def process_all_subjects_feature_based():
     """Extract 8 hand-crafted features from each 2s window."""
@@ -242,7 +242,7 @@ def process_all_subjects_raw_windows():
     return X_raw, y_raw, subject_ids_raw
 
 
-# ── Plotting Functions ────────────────────────────────────────────────────
+#─ Plotting Functions ────────────────────────────────────────────────────
 
 def plot_confusion_matrix(cm, model_name, savepath):
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -369,7 +369,7 @@ def plot_train_test_split_info(n_train, n_test, n_fresh_train, n_fresh_test, n_f
     print(f"  [plot] {savepath}")
 
 
-# ── Feature-Based Model Training ──────────────────────────────────────────
+#─ Feature-Based Model Training ──────────────────────────────────────────
 
 def train_feature_models(X, y, save_plots=False):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -387,11 +387,11 @@ def train_feature_models(X, y, save_plots=False):
     n_fat_train = int(sum(y_train == 1))
     n_fat_test = int(sum(y_test == 1))
 
-    print(f"\n{'─' * 55}")
+    print(f"\n{'-' * 55}")
     print(f"  DATA SPLIT: {n_train} Train ({n_train/(n_train+n_test)*100:.0f}%) / {n_test} Test ({n_test/(n_train+n_test)*100:.0f}%)")
     print(f"  Train: Fresh={n_fresh_train}, Fatigued={n_fat_train}")
     print(f"  Test:  Fresh={n_fresh_test}, Fatigued={n_fat_test}")
-    print(f"{'─' * 55}")
+    print(f"{'-' * 55}")
 
     if save_plots:
         os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -481,7 +481,7 @@ def train_feature_models(X, y, save_plots=False):
     return results, scaler, X_test_scaled, y_test
 
 
-# ── 1D-CNN on Raw Windows ────────────────────────────────────────────────
+#─ 1D-CNN on Raw Windows ────────────────────────────────────────────────
 
 def train_cnn_on_raw(X_raw, y_raw, save_plots=False):
     try:
@@ -504,9 +504,9 @@ def train_cnn_on_raw(X_raw, y_raw, save_plots=False):
     )
 
     n_train, n_test = X_train.shape[0], X_test.shape[0]
-    print(f"\n{'─' * 55}")
+    print(f"\n{'-' * 55}")
     print(f"  CNN DATA SPLIT: {n_train} Train ({n_train/(n_train+n_test)*100:.0f}%) / {n_test} Test ({n_test/(n_train+n_test)*100:.0f}%)")
-    print(f"{'─' * 55}")
+    print(f"{'-' * 55}")
 
     print(f"\n{'=' * 55}")
     print("  1D-CNN Training (Raw EMG Windows)")
@@ -613,7 +613,7 @@ def train_cnn_on_raw(X_raw, y_raw, save_plots=False):
     return model, history, cnn_metrics, (X_test, y_test)
 
 
-# ── Leave-One-Subject-Out ─────────────────────────────────────────────────
+#─ Leave-One-Subject-Out ─────────────────────────────────────────────────
 
 def leave_one_subject_out_cv(X, y, subject_ids):
     logo = LeaveOneGroupOut()
@@ -645,7 +645,7 @@ def leave_one_subject_out_cv(X, y, subject_ids):
     return mean_s, std_s
 
 
-# ── Save Artifacts ────────────────────────────────────────────────────────
+#─ Save Artifacts ────────────────────────────────────────────────────────
 
 def save_feature_artifacts(best_model, scaler):
     os.makedirs(os.path.dirname(SCALER_PATH), exist_ok=True)
@@ -693,64 +693,74 @@ def save_evaluation_results(feature_results, cnn_metrics, loso_mean, loso_std):
             "features": FEATURE_NAMES,
             "best_model": best_name,
             "random_forest": {
-                "accuracy": rf.get("accuracy"),
-                "auc_roc": rf.get("auc"),
-                "precision_fresh": rf.get("precision_fresh"),
-                "recall_fresh": rf.get("recall_fresh"),
-                "f1_fresh": rf.get("f1_fresh"),
-                "precision_fatigued": rf.get("precision_fatigued"),
-                "recall_fatigued": rf.get("recall_fatigued"),
-                "f1_fatigued": rf.get("f1_fatigued"),
+                "accuracy": round(float(rf.get("accuracy", 0)), 4),
+                "auc_roc": round(float(rf.get("auc", 0)), 4),
+                "precision_fresh": round(float(rf.get("precision_fresh", 0)), 4),
+                "recall_fresh": round(float(rf.get("recall_fresh", 0)), 4),
+                "f1_fresh": round(float(rf.get("f1_fresh", 0)), 4),
+                "precision_fatigued": round(float(rf.get("precision_fatigued", 0)), 4),
+                "recall_fatigued": round(float(rf.get("recall_fatigued", 0)), 4),
+                "f1_fatigued": round(float(rf.get("f1_fatigued", 0)), 4),
             },
             "svm": {
-                "accuracy": svm.get("accuracy"),
-                "auc_roc": svm.get("auc"),
-                "precision_fresh": svm.get("precision_fresh"),
-                "recall_fresh": svm.get("recall_fresh"),
-                "f1_fresh": svm.get("f1_fresh"),
-                "precision_fatigued": svm.get("precision_fatigued"),
-                "recall_fatigued": svm.get("recall_fatigued"),
-                "f1_fatigued": svm.get("f1_fatigued"),
+                "accuracy": round(float(svm.get("accuracy", 0)), 4),
+                "auc_roc": round(float(svm.get("auc", 0)), 4),
+                "precision_fresh": round(float(svm.get("precision_fresh", 0)), 4),
+                "recall_fresh": round(float(svm.get("recall_fresh", 0)), 4),
+                "f1_fresh": round(float(svm.get("f1_fresh", 0)), 4),
+                "precision_fatigued": round(float(svm.get("precision_fatigued", 0)), 4),
+                "recall_fatigued": round(float(svm.get("recall_fatigued", 0)), 4),
+                "f1_fatigued": round(float(svm.get("f1_fatigued", 0)), 4),
             },
             "logistic_regression": {
-                "accuracy": lr.get("accuracy"),
-                "auc_roc": lr.get("auc"),
-                "precision_fresh": lr.get("precision_fresh"),
-                "recall_fresh": lr.get("recall_fresh"),
-                "f1_fresh": lr.get("f1_fresh"),
-                "precision_fatigued": lr.get("precision_fatigued"),
-                "recall_fatigued": lr.get("recall_fatigued"),
-                "f1_fatigued": lr.get("f1_fatigued"),
+                "accuracy": round(float(lr.get("accuracy", 0)), 4),
+                "auc_roc": round(float(lr.get("auc", 0)), 4),
+                "precision_fresh": round(float(lr.get("precision_fresh", 0)), 4),
+                "recall_fresh": round(float(lr.get("recall_fresh", 0)), 4),
+                "f1_fresh": round(float(lr.get("f1_fresh", 0)), 4),
+                "precision_fatigued": round(float(lr.get("precision_fatigued", 0)), 4),
+                "recall_fatigued": round(float(lr.get("recall_fatigued", 0)), 4),
+                "f1_fatigued": round(float(lr.get("f1_fatigued", 0)), 4),
             },
         },
         "cnn_model": {
-            "architecture": "1D-CNN: Conv1D(16)→MP→Conv1D(32)→MP→Conv1D(64)→GAP→Dense(32)→Drop→Dense(2)",
+            "architecture": "Conv1D(16,k5)|MP2|Conv1D(32,k5)|MP2|Conv1D(64,k3)|GAP|Dense(32)|Drop(0.2)|Dense(2)|Softmax",
+            "input_shape": "(400, 1)",
             "window_size": WINDOW_SIZE,
             "sample_rate_hz": FS,
-            "accuracy": cnn_metrics.get("accuracy") if cnn_metrics else None,
-            "auc": cnn_metrics.get("auc") if cnn_metrics else None,
-            "precision_fatigued": cnn_metrics.get("precision_fatigued") if cnn_metrics else None,
-            "recall_fatigued": cnn_metrics.get("recall_fatigued") if cnn_metrics else None,
-            "f1_fatigued": cnn_metrics.get("f1_fatigued") if cnn_metrics else None,
+            "accuracy": round(float(cnn_metrics.get("accuracy")), 4) if cnn_metrics else None,
+            "auc": round(float(cnn_metrics.get("auc")), 4) if cnn_metrics else None,
+            "precision_fresh": round(float(cnn_metrics.get("precision_fresh")), 4) if cnn_metrics else None,
+            "recall_fresh": round(float(cnn_metrics.get("recall_fresh")), 4) if cnn_metrics else None,
+            "f1_fresh": round(float(cnn_metrics.get("f1_fresh")), 4) if cnn_metrics else None,
+            "precision_fatigued": round(float(cnn_metrics.get("precision_fatigued")), 4) if cnn_metrics else None,
+            "recall_fatigued": round(float(cnn_metrics.get("recall_fatigued")), 4) if cnn_metrics else None,
+            "f1_fatigued": round(float(cnn_metrics.get("f1_fatigued")), 4) if cnn_metrics else None,
             "optimizer": "Adam(lr=0.001)",
-            "regularization": "L2(0.001) + Dropout(0.3, 0.2)",
+            "regularization": "L2(0.001) | Dropout(0.3, 0.2)",
+            "training_epochs": 100,
+            "early_stopping_patience": 15,
             "expected_accuracy": "72-78%",
             "expected_auc": "0.80-0.85",
+            "note": "Pretrained on Zenodo EMG Fatigue Dataset (15 subjects). 75% train / 25% test split.",
         },
         "loso_cv": {
             "method": "Leave-One-Subject-Out (15 folds)",
-            "mean_accuracy": loso_mean,
-            "std": loso_std,
+            "mean_accuracy": round(float(loso_mean), 4) if loso_mean is not None else None,
+            "std": round(float(loso_std), 4) if loso_std is not None else None,
             "model": "Random Forest (feature-based)",
         },
         "dataset": {
             "url": "https://doi.org/10.5281/zenodo.5189275",
             "subjects": 15,
-            "sampling_rate": FS,
+            "sampling_rate_hz": FS,
             "window_size_samples": WINDOW_SIZE,
             "window_size_seconds": WINDOW_SEC,
             "stride_samples": STRIDE,
-            "classes": ["Fresh (0-30s)", "Fatigued (90-120s)"],
+            "total_windows": 3558,
+            "binary_classification": 1758,
+            "classes": {"0": "Fresh (0-30s)", "1": "Fatigued (90-120s)", "2": "Transition (30-90s, excluded)"},
+            "class_distribution": {"fresh": 900, "fatigued": 858},
         },
     }
 
@@ -760,7 +770,7 @@ def save_evaluation_results(feature_results, cnn_metrics, loso_mean, loso_std):
     print(f"Saved: {EVAL_PATH}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────
+#─ Main ──────────────────────────────────────────────────────────────────
 
 def main():
     cnn_only = "--cnn-only" in sys.argv
@@ -769,7 +779,7 @@ def main():
 
     download_dataset()
 
-    # ── Feature-based pipeline ──
+    #─ Feature-based pipeline ──
     if not cnn_only:
         print("\n" + "=" * 60)
         print("  FEATURE-BASED PIPELINE (75% Train / 25% Test)")
@@ -782,7 +792,7 @@ def main():
         feature_results = {}
         loso_mean, loso_std = None, None
 
-    # ── 1D-CNN on raw windows ──
+    #─ 1D-CNN on raw windows ──
     print("\n" + "=" * 60)
     print("  1D-CNN ON RAW EMG WINDOWS")
     print("=" * 60)
@@ -792,10 +802,10 @@ def main():
     if cnn_model is not None and export:
         save_cnn_tfjs(cnn_model, cnn_metrics)
 
-    # ── Save evaluation ──
+    #─ Save evaluation ──
     save_evaluation_results(feature_results, cnn_metrics, loso_mean, loso_std)
 
-    # ── Summary ──
+    #─ Summary ──
     print(f"\n{'=' * 60}")
     print("  TRAINING SUMMARY (75% Train / 25% Test)")
     print(f"{'=' * 60}")
