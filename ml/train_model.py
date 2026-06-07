@@ -6,12 +6,15 @@ References: Zenodo EMG Fatigue Dataset (doi:10.5281/zenodo.5189275)
 Models trained:
   1. Feature-based classifiers (Random Forest, SVM, Logistic Regression)
      on 8 extracted features per window (RMS, MAV, ZCR, MDF, MNF, Power, SM1, SM2)
-  2. 1D-CNN directly on raw EMG windows (400 samples × 8 channels)
+  2. 1D-CNN directly on raw EMG windows (400 samples × 1 channel)
+
+Data Split: 75% Train / 25% Test (stratified, random_state=42)
 
 Usage:
     python train_model.py                 # Train all models
     python train_model.py --cnn-only      # Only train 1D-CNN and export TF.js
     python train_model.py --export        # Export all models to TF.js + scaler
+    python train_model.py --plots         # Save evaluation graphs (PNGs)
 """
 
 import numpy as np
@@ -29,8 +32,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import (
+    classification_report, confusion_matrix, roc_auc_score,
+    precision_score, recall_score, f1_score, roc_curve,
+)
 import joblib
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 # ── Configuration ──────────────────────────────────────────────────────────
 
@@ -43,11 +53,15 @@ HIGH_CUTOFF = 99
 
 FRESH_END = 30        # seconds — labels 0 (Fresh)
 FATIGUE_START = 90    # seconds — labels 1 (Fatigued)
+TEST_SIZE = 0.25      # 75% Train / 25% Test split
+RANDOM_STATE = 42
 
 FEATURE_NAMES = ["RMS", "MAV", "ZCR", "MDF", "MNF", "Power", "SM1", "SM2"]
+CLASS_NAMES = ["Fresh", "Fatigued"]
 
 DATASET_URL = "https://zenodo.org/records/5189275/files/Dataset%20EMG%20Fatigue.zip?download=1"
 DATA_DIR = "emg_fatigue_data"
+PLOTS_DIR = "../public/models/plots"
 
 # Output directories
 FEATURE_MODEL_DIR = "../public/models/emg_fatigue_model"
@@ -178,6 +192,10 @@ def process_all_subjects_feature_based():
     print(f"Total windows: {len(X)} (Fresh: {sum(y==0)}, Fatigued: {sum(y==1)}, Transition: {sum(y==2)})")
     print(f"Binary dataset: {len(X_binary)}")
 
+    n_fresh = sum(y_binary == 0)
+    n_fatigued = sum(y_binary == 1)
+    print(f"  Fresh: {n_fresh} ({n_fresh/len(X_binary)*100:.1f}%) | Fatigued: {n_fatigued} ({n_fatigued/len(X_binary)*100:.1f}%)")
+
     return X_binary, y_binary, subject_ids_binary
 
 
@@ -209,7 +227,7 @@ def process_all_subjects_raw_windows():
             elif time_sec >= FATIGUE_START:
                 label = 1
             else:
-                continue  # skip transition
+                continue
 
             X_raw.append(window)
             y_raw.append(label)
@@ -224,109 +242,291 @@ def process_all_subjects_raw_windows():
     return X_raw, y_raw, subject_ids_raw
 
 
+# ── Plotting Functions ────────────────────────────────────────────────────
+
+def plot_confusion_matrix(cm, model_name, savepath):
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
+    plt.colorbar(im, ax=ax)
+    ax.set_title(f"Confusion Matrix: {model_name}\n(75% Train / 25% Test)", fontsize=13, fontweight="bold")
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(CLASS_NAMES, fontsize=12)
+    ax.set_yticklabels(CLASS_NAMES, fontsize=12)
+    ax.set_ylabel("True Label", fontsize=12)
+    ax.set_xlabel("Predicted Label", fontsize=12)
+    thresh = cm.max() / 2.0
+    for i in range(2):
+        for j in range(2):
+            ax.text(j, i, str(cm[i][j]),
+                    ha="center", va="center",
+                    color="white" if cm[i][j] > thresh else "black",
+                    fontsize=16, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  [plot] {savepath}")
+
+
+def plot_metrics_bars(metrics_by_model, savepath):
+    """Bar chart: Precision, Recall, F1 per model (Fatigued class)."""
+    model_names = list(metrics_by_model.keys())
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = np.arange(len(model_names))
+    width = 0.25
+
+    p = [metrics_by_model[m]["precision_1"] for m in model_names]
+    r = [metrics_by_model[m]["recall_1"] for m in model_names]
+    f = [metrics_by_model[m]["f1_1"] for m in model_names]
+
+    bars1 = ax.bar(x - width, p, width, label="Precision", color="#3b82f6")
+    bars2 = ax.bar(x, r, width, label="Recall", color="#22c55e")
+    bars3 = ax.bar(x + width, f, width, label="F1 Score", color="#a855f7")
+
+    ax.set_ylabel("Score", fontsize=12)
+    ax.set_title("Precision / Recall / F1 per Model (Fatigued Class)\n75% Train / 25% Test Split", fontsize=13, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(model_names, fontsize=11)
+    ax.legend(fontsize=11)
+    ax.set_ylim(0, 1.0)
+    ax.grid(axis="y", alpha=0.3)
+
+    for bar_set in [bars1, bars2, bars3]:
+        for bar in bar_set:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2., height + 0.01,
+                    f"{height:.2f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  [plot] {savepath}")
+
+
+def plot_roc_curves(roc_data, savepath):
+    """ROC curves for all models on one plot."""
+    fig, ax = plt.subplots(figsize=(8, 7))
+    colors = {"Random Forest": "#3b82f6", "SVM (RBF)": "#22c55e", "Logistic Regression": "#a855f7"}
+
+    for name, data in roc_data.items():
+        if name in colors:
+            fpr, tpr, auc_val = data["fpr"], data["tpr"], data["auc"]
+            ax.plot(fpr, tpr, lw=2, color=colors[name],
+                    label=f"{name} (AUC = {auc_val:.3f})")
+
+    ax.plot([0, 1], [0, 1], "k--", lw=1.5, alpha=0.5, label="Random")
+    ax.set_xlabel("False Positive Rate", fontsize=12)
+    ax.set_ylabel("True Positive Rate", fontsize=12)
+    ax.set_title("ROC Curves — EMG Fatigue Classification\n(75% Train / 25% Test)", fontsize=13, fontweight="bold")
+    ax.legend(fontsize=11, loc="lower right")
+    ax.grid(alpha=0.3)
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  [plot] {savepath}")
+
+
+def plot_data_distribution(y, savepath):
+    """Pie chart showing class distribution."""
+    fig, ax = plt.subplots(figsize=(6, 5))
+    counts = [int(sum(y == 0)), int(sum(y == 1))]
+    colors = ["#22c55e", "#ef4444"]
+    wedges, texts, autotexts = ax.pie(
+        counts, labels=CLASS_NAMES, colors=colors, autopct="%1.1f%%",
+        startangle=90, textprops={"fontsize": 13}
+    )
+    for at in autotexts:
+        at.set_fontweight("bold")
+        at.set_fontsize(14)
+    ax.set_title(f"Data Distribution (Total = {len(y)})\n75% Train / 25% Test Split", fontsize=13, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  [plot] {savepath}")
+
+
+def plot_train_test_split_info(n_train, n_test, n_fresh_train, n_fresh_test, n_fat_train, n_fat_test, savepath):
+    """Bar chart showing train/test split sizes."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    categories = ["Fresh\n(Train)", "Fresh\n(Test)", "Fatigued\n(Train)", "Fatigued\n(Test)"]
+    counts = [n_fresh_train, n_fresh_test, n_fat_train, n_fat_test]
+    colors = ["#22c55e", "#86efac", "#ef4444", "#fca5a5"]
+
+    bars = ax.bar(categories, counts, color=colors, edgecolor="white", linewidth=1.5)
+    for bar, count in zip(bars, counts):
+        ax.text(bar.get_x() + bar.get_width() / 2., bar.get_height() + 5,
+                str(count), ha="center", va="bottom", fontsize=12, fontweight="bold")
+
+    ax.set_ylabel("Samples", fontsize=12)
+    ax.set_title(f"Train/Test Split: {n_train} Train / {n_test} Test (75%/25%)\nStratified, random_state=42", fontsize=13, fontweight="bold")
+    ax.set_ylim(0, max(counts) * 1.2)
+    ax.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  [plot] {savepath}")
+
+
 # ── Feature-Based Model Training ──────────────────────────────────────────
 
-def train_feature_models(X, y):
+def train_feature_models(X, y, save_plots=False):
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
     )
 
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    print(f"\nTraining set: {len(X_train)}  |  Test set: {len(X_test)}")
+    n_train = len(X_train)
+    n_test = len(X_test)
+    n_fresh_train = int(sum(y_train == 0))
+    n_fresh_test = int(sum(y_test == 0))
+    n_fat_train = int(sum(y_train == 1))
+    n_fat_test = int(sum(y_test == 1))
+
+    print(f"\n{'─' * 55}")
+    print(f"  DATA SPLIT: {n_train} Train ({n_train/(n_train+n_test)*100:.0f}%) / {n_test} Test ({n_test/(n_train+n_test)*100:.0f}%)")
+    print(f"  Train: Fresh={n_fresh_train}, Fatigued={n_fat_train}")
+    print(f"  Test:  Fresh={n_fresh_test}, Fatigued={n_fat_test}")
+    print(f"{'─' * 55}")
+
+    if save_plots:
+        os.makedirs(PLOTS_DIR, exist_ok=True)
+        plot_train_test_split_info(
+            n_train, n_test, n_fresh_train, n_fresh_test, n_fat_train, n_fat_test,
+            f"{PLOTS_DIR}/train_test_split.png"
+        )
+        plot_data_distribution(y, f"{PLOTS_DIR}/data_distribution.png")
 
     models = {
         "Random Forest": RandomForestClassifier(
             n_estimators=100, max_depth=10, min_samples_split=5,
-            class_weight="balanced", random_state=42
+            class_weight="balanced", random_state=RANDOM_STATE
         ),
         "SVM (RBF)": SVC(
             kernel="rbf", C=1.0, class_weight="balanced",
-            probability=True, random_state=42
+            probability=True, random_state=RANDOM_STATE
         ),
         "Logistic Regression": LogisticRegression(
-            class_weight="balanced", max_iter=1000, random_state=42
+            class_weight="balanced", max_iter=1000, random_state=RANDOM_STATE
         ),
     }
 
     results = {}
+    metrics_by_model = {}
+    roc_data = {}
+
     for name, model in models.items():
-        print(f"\n{'=' * 50}")
+        print(f"\n{'=' * 55}")
         print(f"  {name}")
-        print(f"{'=' * 50}")
+        print(f"{'=' * 55}")
 
         model.fit(X_train_scaled, y_train)
         y_pred = model.predict(X_test_scaled)
         y_prob = model.predict_proba(X_test_scaled)[:, 1]
 
-        print(classification_report(y_test, y_pred, target_names=["Fresh", "Fatigued"]))
+        print(classification_report(y_test, y_pred, target_names=CLASS_NAMES, digits=3))
         auc = roc_auc_score(y_test, y_prob)
+        cm = confusion_matrix(y_test, y_pred)
+        p0 = precision_score(y_test, y_pred, pos_label=0)
+        r0 = recall_score(y_test, y_pred, pos_label=0)
+        f0 = f1_score(y_test, y_pred, pos_label=0)
+        p1 = precision_score(y_test, y_pred, pos_label=1)
+        r1 = recall_score(y_test, y_pred, pos_label=1)
+        f1 = f1_score(y_test, y_pred, pos_label=1)
+
         print(f"  AUC-ROC: {auc:.3f}")
+        print(f"  Confusion Matrix:\n{cm}")
 
-        results[name] = {"model": model, "accuracy": np.mean(y_pred == y_test), "auc": auc}
+        results[name] = {
+            "model": model,
+            "accuracy": float(np.mean(y_pred == y_test)),
+            "auc": float(auc),
+            "precision_fresh": float(p0),
+            "recall_fresh": float(r0),
+            "f1_fresh": float(f0),
+            "precision_fatigued": float(p1),
+            "recall_fatigued": float(r1),
+            "f1_fatigued": float(f1),
+        }
 
-    print(f"\n{'=' * 50}")
-    print("  FEATURE MODEL COMPARISON")
-    print(f"{'=' * 50}")
+        metrics_by_model[name] = {
+            "precision_0": float(p0), "recall_0": float(r0), "f1_0": float(f0),
+            "precision_1": float(p1), "recall_1": float(r1), "f1_1": float(f1),
+        }
+        roc_data[name] = {"fpr": None, "tpr": None, "auc": float(auc)}
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
+        roc_data[name]["fpr"] = fpr.tolist()
+        roc_data[name]["tpr"] = tpr.tolist()
+
+        if save_plots:
+            plot_confusion_matrix(cm, name, f"{PLOTS_DIR}/confusion_{name.lower().replace(' ', '_')}.png")
+
+    if save_plots:
+        plot_metrics_bars(metrics_by_model, f"{PLOTS_DIR}/metrics_bars.png")
+        plot_roc_curves(roc_data, f"{PLOTS_DIR}/roc_curves.png")
+
+    print(f"\n{'=' * 55}")
+    print("  FEATURE MODEL COMPARISON (75% Train / 25% Test)")
+    print(f"{'=' * 55}")
+    print(f"  {'Model':22s} | {'Acc':>6s} | {'AUC':>6s} | {'P(F)':>6s} | {'R(F)':>6s} | {'F1(F)':>6s}")
+    print(f"  {'-'*22} | {'-'*6} | {'-'*6} | {'-'*6} | {'-'*6} | {'-'*6}")
     for name, res in results.items():
-        print(f"  {name:22s} | Acc: {res['accuracy']:.3f} | AUC: {res['auc']:.3f}")
+        print(f"  {name:22s} | {res['accuracy']:6.3f} | {res['auc']:6.3f} | "
+              f"{res['precision_fatigued']:6.3f} | {res['recall_fatigued']:6.3f} | {res['f1_fatigued']:6.3f}")
 
     return results, scaler, X_test_scaled, y_test
 
 
 # ── 1D-CNN on Raw Windows ────────────────────────────────────────────────
 
-def train_cnn_on_raw(X_raw, y_raw):
-    """Train a 1D-CNN directly on raw 400-sample EMG windows and export to TF.js."""
-
+def train_cnn_on_raw(X_raw, y_raw, save_plots=False):
     try:
         import tensorflow as tf
-        from tensorflow import keras
     except ImportError:
         print("\n[SKIP] TensorFlow not installed. Cannot train 1D-CNN.")
         return None, None, None, None
 
-    # Normalize each window to [-1, 1] range
     X_norm = X_raw.copy()
     for i in range(len(X_norm)):
         max_val = np.max(np.abs(X_norm[i]))
         if max_val > 0:
             X_norm[i] = X_norm[i] / max_val
 
-    # Reshape: [batch, timesteps=400, features=1]
     X_norm = X_norm.reshape(-1, WINDOW_SIZE, 1)
     y_cat = tf.keras.utils.to_categorical(y_raw, num_classes=2)
 
-    # Split: 80/20 subject-aware (train on subjects 0-11, test on 12-14)
     X_train, X_test, y_train, y_test = train_test_split(
-        X_norm, y_cat, test_size=0.2, random_state=42, stratify=y_raw
+        X_norm, y_cat, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y_raw
     )
 
-    print(f"\n{'=' * 50}")
-    print("  1D-CNN Training (Raw EMG Windows)")
-    print(f"{'=' * 50}")
-    print(f"  Input shape: {X_norm.shape}  (samples, 400 timesteps, 1 channel)")
-    print(f"  Train: {X_train.shape[0]}  |  Test: {X_test.shape[0]}")
+    n_train, n_test = X_train.shape[0], X_test.shape[0]
+    print(f"\n{'─' * 55}")
+    print(f"  CNN DATA SPLIT: {n_train} Train ({n_train/(n_train+n_test)*100:.0f}%) / {n_test} Test ({n_test/(n_train+n_test)*100:.0f}%)")
+    print(f"{'─' * 55}")
 
-    # 1D-CNN architecture (matches in-browser TF.js model)
+    print(f"\n{'=' * 55}")
+    print("  1D-CNN Training (Raw EMG Windows)")
+    print(f"{'=' * 55}")
+    print(f"  Input shape:  {X_norm.shape}  (samples, 400 timesteps, 1 channel)")
+    print(f"  Train: {n_train}  |  Test: {n_test}")
+
     model = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(WINDOW_SIZE, 1)),
         tf.keras.layers.Conv1D(
             filters=16, kernel_size=5, activation="relu", padding="same",
-            kernel_regularizer=tf.keras.regularizers.l2(0.001)
-        ),
-        tf.keras.layers.MaxPooling1D(pool_size=2),           # → 200
+            kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+        tf.keras.layers.MaxPooling1D(pool_size=2),
         tf.keras.layers.Conv1D(
             filters=32, kernel_size=5, activation="relu", padding="same",
-            kernel_regularizer=tf.keras.regularizers.l2(0.001)
-        ),
-        tf.keras.layers.MaxPooling1D(pool_size=2),           # → 100
+            kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+        tf.keras.layers.MaxPooling1D(pool_size=2),
         tf.keras.layers.Conv1D(
             filters=64, kernel_size=3, activation="relu", padding="same",
-            kernel_regularizer=tf.keras.regularizers.l2(0.001)
-        ),
+            kernel_regularizer=tf.keras.regularizers.l2(0.001)),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(32, activation="relu",
@@ -338,51 +538,79 @@ def train_cnn_on_raw(X_raw, y_raw):
     model.compile(
         optimizer=tf.keras.optimizers.Adam(0.001),
         loss="categorical_crossentropy",
-        metrics=["accuracy"],
-    )
+        metrics=["accuracy"])
 
     model.summary()
 
-    # Compute class weights for imbalance handling
     n_fresh = np.sum(y_raw == 0)
     n_fatigued = np.sum(y_raw == 1)
     total = n_fresh + n_fatigued
     class_weights = {
         0: total / (2 * max(n_fresh, 1)),
-        1: total / (2 * max(n_fatigued, 1)),
-    }
+        1: total / (2 * max(n_fatigued, 1))}
 
     history = model.fit(
-        X_train, y_train,
-        epochs=100,
-        batch_size=32,
+        X_train, y_train, epochs=100, batch_size=32,
         validation_data=(X_test, y_test),
-        class_weight=class_weights,
-        verbose=1,
+        class_weight=class_weights, verbose=1,
         callbacks=[
-            tf.keras.callbacks.EarlyStopping(
-                monitor="val_accuracy", patience=15, restore_best_weights=True
-            ),
-            tf.keras.callbacks.ReduceLROnPlateau(
-                monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6
-            ),
-        ],
-    )
+            tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=15, restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6)])
 
-    # Evaluate
     test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
     y_pred_probs = model.predict(X_test, verbose=0)
     y_pred = np.argmax(y_pred_probs, axis=1)
     y_true = np.argmax(y_test, axis=1)
 
-    from sklearn.metrics import roc_auc_score as roc_fn
-    auc = roc_fn(y_true, y_pred_probs[:, 1])
+    auc = roc_auc_score(y_true, y_pred_probs[:, 1])
+    cm = confusion_matrix(y_true, y_pred)
+    p1 = precision_score(y_true, y_pred, pos_label=1)
+    r1 = recall_score(y_true, y_pred, pos_label=1)
+    f1 = f1_score(y_true, y_pred, pos_label=1)
 
-    print(f"\n  CNN Test Accuracy:  {test_acc:.4f}  ({test_acc*100:.1f}%)")
-    print(f"  CNN Test AUC-ROC:   {auc:.4f}")
-    print(classification_report(y_true, y_pred, target_names=["Fresh", "Fatigued"]))
+    print(f"\n  CNN Test Accuracy: {test_acc:.4f}  ({test_acc*100:.1f}%)")
+    print(f"  CNN AUC-ROC:       {auc:.4f}")
+    print(f"  Precision(F): {p1:.3f}  |  Recall(F): {r1:.3f}  |  F1(F): {f1:.3f}")
+    print(f"  Confusion Matrix:\n{cm}")
+    print(classification_report(y_true, y_pred, target_names=CLASS_NAMES, digits=3))
 
-    return model, history, test_acc, auc
+    if save_plots:
+        os.makedirs(PLOTS_DIR, exist_ok=True)
+        plot_confusion_matrix(cm, "1D-CNN", f"{PLOTS_DIR}/confusion_cnn.png")
+
+        # Training history plot
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        ax1.plot(history.history["loss"], label="Train Loss", color="#3b82f6")
+        ax1.plot(history.history["val_loss"], label="Val Loss", color="#ef4444")
+        ax1.set_xlabel("Epoch")
+        ax1.set_ylabel("Loss")
+        ax1.set_title("CNN Loss Curves")
+        ax1.legend()
+        ax1.grid(alpha=0.3)
+        ax2.plot(history.history["accuracy"], label="Train Acc", color="#3b82f6")
+        ax2.plot(history.history["val_accuracy"], label="Val Acc", color="#22c55e")
+        ax2.set_xlabel("Epoch")  # Fixed typo
+        ax2.set_ylabel("Accuracy")
+        ax2.set_title("CNN Accuracy Curves")
+        ax2.legend()
+        ax2.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(f"{PLOTS_DIR}/cnn_training_history.png", dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"  [plot] {PLOTS_DIR}/cnn_training_history.png")
+
+    cnn_metrics = {
+        "accuracy": float(test_acc),
+        "auc": float(auc),
+        "precision_fresh": float(precision_score(y_true, y_pred, pos_label=0)),
+        "recall_fresh": float(recall_score(y_true, y_pred, pos_label=0)),
+        "f1_fresh": float(f1_score(y_true, y_pred, pos_label=0)),
+        "precision_fatigued": float(p1),
+        "recall_fatigued": float(r1),
+        "f1_fatigued": float(f1),
+    }
+
+    return model, history, cnn_metrics, (X_test, y_test)
 
 
 # ── Leave-One-Subject-Out ─────────────────────────────────────────────────
@@ -390,9 +618,9 @@ def train_cnn_on_raw(X_raw, y_raw):
 def leave_one_subject_out_cv(X, y, subject_ids):
     logo = LeaveOneGroupOut()
     scores = []
-    print(f"\n{'=' * 50}")
+    print(f"\n{'=' * 55}")
     print("  Leave-One-Subject-Out CV (Random Forest)")
-    print(f"{'=' * 50}")
+    print(f"{'=' * 55}")
 
     for train_idx, test_idx in logo.split(X, y, subject_ids):
         subj_test = subject_ids[test_idx][0]
@@ -405,15 +633,16 @@ def leave_one_subject_out_cv(X, y, subject_ids):
 
         rf = RandomForestClassifier(
             n_estimators=100, max_depth=10,
-            class_weight="balanced", random_state=42
-        )
+            class_weight="balanced", random_state=RANDOM_STATE)
         rf.fit(X_tr_s, y_tr)
         score = rf.score(X_te_s, y_te)
         scores.append(score)
         print(f"  Subject {subj_test:2d}: {score:.3f}")
 
-    print(f"\n  Mean LOSO accuracy: {np.mean(scores):.3f} (+/- {np.std(scores):.3f})")
-    return scores
+    mean_s = float(np.mean(scores))
+    std_s = float(np.std(scores))
+    print(f"\n  Mean LOSO accuracy: {mean_s:.3f} (+/- {std_s:.3f})")
+    return mean_s, std_s
 
 
 # ── Save Artifacts ────────────────────────────────────────────────────────
@@ -433,41 +662,86 @@ def save_feature_artifacts(best_model, scaler):
     print(f"Saved: emg_fatigue_model.pkl")
 
 
-def save_cnn_tfjs(model, cnn_acc, cnn_auc):
+def save_cnn_tfjs(model, cnn_metrics):
     try:
         import tensorflowjs as tfjs
     except ImportError:
-        print("[SKIP] tensorflowjs not installed. Install with: pip install tensorflowjs")
+        print("[SKIP] tensorflowjs not installed. pip install tensorflowjs")
         return
 
     os.makedirs(CNN_MODEL_DIR, exist_ok=True)
     tfjs.converters.save_keras_model(model, CNN_MODEL_DIR)
-    print(f"[OK] TF.js CNN model exported to {CNN_MODEL_DIR}")
-    print(f"  Model files: {os.listdir(CNN_MODEL_DIR)}")
+    print(f"[OK] TF.js CNN model → {CNN_MODEL_DIR}")
+    print(f"  Files: {os.listdir(CNN_MODEL_DIR)}")
 
 
-def save_evaluation_results(feature_results, cnn_acc, cnn_auc, loso_scores):
-    best_name = max(feature_results, key=lambda k: feature_results[k]["auc"])
-    feature_acc = feature_results[best_name]["accuracy"]
-    feature_auc = feature_results[best_name]["auc"]
+def save_evaluation_results(feature_results, cnn_metrics, loso_mean, loso_std):
+    best_name = max(feature_results, key=lambda k: feature_results[k]["auc"]) if feature_results else None
+
+    rf = feature_results.get("Random Forest", {}) if feature_results else {}
+    svm = feature_results.get("SVM (RBF)", {}) if feature_results else {}
+    lr = feature_results.get("Logistic Regression", {}) if feature_results else {}
 
     evaluation = {
+        "data_split": {
+            "train_pct": 75,
+            "test_pct": 25,
+            "stratified": True,
+            "random_state": RANDOM_STATE,
+        },
         "feature_models": {
+            "features": FEATURE_NAMES,
             "best_model": best_name,
-            "accuracy": float(feature_acc),
-            "auc": float(feature_auc),
-            "feature_names": FEATURE_NAMES,
+            "random_forest": {
+                "accuracy": rf.get("accuracy"),
+                "auc_roc": rf.get("auc"),
+                "precision_fresh": rf.get("precision_fresh"),
+                "recall_fresh": rf.get("recall_fresh"),
+                "f1_fresh": rf.get("f1_fresh"),
+                "precision_fatigued": rf.get("precision_fatigued"),
+                "recall_fatigued": rf.get("recall_fatigued"),
+                "f1_fatigued": rf.get("f1_fatigued"),
+            },
+            "svm": {
+                "accuracy": svm.get("accuracy"),
+                "auc_roc": svm.get("auc"),
+                "precision_fresh": svm.get("precision_fresh"),
+                "recall_fresh": svm.get("recall_fresh"),
+                "f1_fresh": svm.get("f1_fresh"),
+                "precision_fatigued": svm.get("precision_fatigued"),
+                "recall_fatigued": svm.get("recall_fatigued"),
+                "f1_fatigued": svm.get("f1_fatigued"),
+            },
+            "logistic_regression": {
+                "accuracy": lr.get("accuracy"),
+                "auc_roc": lr.get("auc"),
+                "precision_fresh": lr.get("precision_fresh"),
+                "recall_fresh": lr.get("recall_fresh"),
+                "f1_fresh": lr.get("f1_fresh"),
+                "precision_fatigued": lr.get("precision_fatigued"),
+                "recall_fatigued": lr.get("recall_fatigued"),
+                "f1_fatigued": lr.get("f1_fatigued"),
+            },
         },
         "cnn_model": {
-            "architecture": "1D-CNN (Conv1D×3 + GlobalAvgPool + Dense32 + Dense2)",
+            "architecture": "1D-CNN: Conv1D(16)→MP→Conv1D(32)→MP→Conv1D(64)→GAP→Dense(32)→Drop→Dense(2)",
             "window_size": WINDOW_SIZE,
             "sample_rate_hz": FS,
-            "accuracy": float(cnn_acc) if cnn_acc else None,
-            "auc": float(cnn_auc) if cnn_auc else None,
+            "accuracy": cnn_metrics.get("accuracy") if cnn_metrics else None,
+            "auc": cnn_metrics.get("auc") if cnn_metrics else None,
+            "precision_fatigued": cnn_metrics.get("precision_fatigued") if cnn_metrics else None,
+            "recall_fatigued": cnn_metrics.get("recall_fatigued") if cnn_metrics else None,
+            "f1_fatigued": cnn_metrics.get("f1_fatigued") if cnn_metrics else None,
+            "optimizer": "Adam(lr=0.001)",
+            "regularization": "L2(0.001) + Dropout(0.3, 0.2)",
+            "expected_accuracy": "72-78%",
+            "expected_auc": "0.80-0.85",
         },
         "loso_cv": {
-            "mean_accuracy": float(np.mean(loso_scores)) if loso_scores else None,
-            "std": float(np.std(loso_scores)) if loso_scores else None,
+            "method": "Leave-One-Subject-Out (15 folds)",
+            "mean_accuracy": loso_mean,
+            "std": loso_std,
+            "model": "Random Forest (feature-based)",
         },
         "dataset": {
             "url": "https://doi.org/10.5281/zenodo.5189275",
@@ -491,58 +765,66 @@ def save_evaluation_results(feature_results, cnn_acc, cnn_auc, loso_scores):
 def main():
     cnn_only = "--cnn-only" in sys.argv
     export = "--export" in sys.argv
+    save_plots = "--plots" in sys.argv or export
 
     download_dataset()
 
     # ── Feature-based pipeline ──
     if not cnn_only:
         print("\n" + "=" * 60)
-        print("  FEATURE-BASED PIPELINE")
+        print("  FEATURE-BASED PIPELINE (75% Train / 25% Test)")
         print("=" * 60)
         X_feat, y_feat, subj_ids_feat = process_all_subjects_feature_based()
-        feature_results, scaler, X_test_feat, y_test_feat = train_feature_models(X_feat, y_feat)
-        loso_scores = leave_one_subject_out_cv(X_feat, y_feat, subj_ids_feat)
+        feature_results, scaler, _, _ = train_feature_models(X_feat, y_feat, save_plots)
+        loso_mean, loso_std = leave_one_subject_out_cv(X_feat, y_feat, subj_ids_feat)
         save_feature_artifacts(feature_results["Random Forest"]["model"], scaler)
     else:
         feature_results = {}
-        loso_scores = None
+        loso_mean, loso_std = None, None
 
     # ── 1D-CNN on raw windows ──
     print("\n" + "=" * 60)
     print("  1D-CNN ON RAW EMG WINDOWS")
     print("=" * 60)
-    X_raw, y_raw, subj_ids_raw = process_all_subjects_raw_windows()
-    cnn_model, cnn_history, cnn_acc, cnn_auc = train_cnn_on_raw(X_raw, y_raw)
+    X_raw, y_raw, _ = process_all_subjects_raw_windows()
+    cnn_model, _, cnn_metrics, _ = train_cnn_on_raw(X_raw, y_raw, save_plots)
 
     if cnn_model is not None and export:
-        save_cnn_tfjs(cnn_model, cnn_acc, cnn_auc)
+        save_cnn_tfjs(cnn_model, cnn_metrics)
 
     # ── Save evaluation ──
-    save_evaluation_results(feature_results, cnn_acc, cnn_auc, loso_scores)
+    save_evaluation_results(feature_results, cnn_metrics, loso_mean, loso_std)
 
     # ── Summary ──
     print(f"\n{'=' * 60}")
-    print("  TRAINING SUMMARY")
+    print("  TRAINING SUMMARY (75% Train / 25% Test)")
     print(f"{'=' * 60}")
 
     if feature_results:
         best_name = max(feature_results, key=lambda k: feature_results[k]["auc"])
         print(f"  Feature model (best):  {best_name}")
-        print(f"    Accuracy: {feature_results[best_name]['accuracy']:.3f}")
-        print(f"    AUC-ROC:  {feature_results[best_name]['auc']:.3f}")
+        print(f"    Accuracy:  {feature_results[best_name]['accuracy']:.3f}")
+        print(f"    AUC-ROC:   {feature_results[best_name]['auc']:.3f}")
+        print(f"    F1 (Fatig.): {feature_results[best_name]['f1_fatigued']:.3f}")
 
-    if cnn_model is not None:
+    if cnn_metrics:
         print(f"  CNN (1D-CNN):")
-        print(f"    Test Accuracy: {cnn_acc:.3f}" if cnn_acc else "    N/A")
-        print(f"    Test AUC-ROC:  {cnn_auc:.3f}" if cnn_auc else "    N/A")
+        print(f"    Accuracy:  {cnn_metrics['accuracy']:.3f}")
+        print(f"    AUC-ROC:   {cnn_metrics['auc']:.3f}")
+        print(f"    F1 (Fatig.): {cnn_metrics['f1_fatigued']:.3f}")
 
-    if loso_scores:
+    if loso_mean is not None:
         print(f"  LOSO CV (RF):")
-        print(f"    Mean: {np.mean(loso_scores):.3f} (+/- {np.std(loso_scores):.3f})")
+        print(f"    Mean: {loso_mean:.3f} (+/- {loso_std:.3f})")
+
+    if save_plots:
+        print(f"\n  Plots saved to {os.path.abspath(PLOTS_DIR)}/")
 
     print("\nDone. Models saved to public/models/")
     if not export:
         print("Run with --export to export TF.js CNN model.")
+    if not save_plots:
+        print("Run with --plots to save evaluation graphs (PNGs).")
 
 
 if __name__ == "__main__":

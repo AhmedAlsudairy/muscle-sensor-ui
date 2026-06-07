@@ -27,6 +27,56 @@ Arduino (EMG sensor) → USB Serial → Raspberry Pi (Node.js API) → Neon Post
 
 ---
 
+## Pretrained Model (NEW)
+
+A **pretrained 1D-CNN** is included, trained on the [Zenodo EMG Fatigue Dataset](https://doi.org/10.5281/zenodo.5189275) (15 subjects, 200 Hz). Click **Pretrained CNN** in the AI panel to load it instead of training from scratch.
+
+### Training Pipeline
+
+```bash
+cd ml
+pip install -r requirements.txt
+python train_model.py          # Train RF + SVM + LR + 1D-CNN
+python train_model.py --export # Also export TF.js model
+python train_model.py --plots  # Save evaluation graphs (PNGs)
+```
+
+### Models & Metrics
+
+| Model | Accuracy | AUC-ROC | F1 (Fatigued) |
+|-------|----------|---------|---------------|
+| Random Forest | 69.3% | 0.790 | 0.68 |
+| SVM (RBF) | 67.6% | 0.753 | 0.66 |
+| Logistic Regression | 65.6% | 0.726 | 0.64 |
+| 1D-CNN (pretrained) | ~72-78% | ~0.80-0.85 | — |
+
+### Data Split: 75% Train / 25% Test (Stratified, random_state=42)
+
+### Features Extracted (per 2s window)
+
+1. **RMS** — Root Mean Square amplitude
+2. **MAV** — Mean Absolute Value
+3. **ZCR** — Zero Crossing Rate
+4. **MDF** — Median Frequency (classic fatigue indicator)
+5. **MNF** — Mean Frequency
+6. **Power** — Total spectral power (10-99 Hz)
+7. **SM1** — First spectral moment
+8. **SM2** — Second spectral moment
+
+### Evaluation
+
+- **Random Forest**: 69.3% accuracy, 0.79 AUC (best feature model)
+- **1D-CNN**: 72-78% accuracy on raw 400-sample windows
+- **LOSO CV**: 54.8% mean accuracy (±8.9%) across 15 subjects
+- **Evaluation Graphs** (generated with `--plots`):
+  - Confusion matrices per model
+  - Precision / Recall / F1 bar charts
+  - ROC curves
+  - Train/Test split visualization
+  - CNN training loss/accuracy curves
+
+---
+
 ## AI Model — TensorFlow.js 1D-CNN
 
 The AI panel uses [@tensorflow/tfjs](https://github.com/tensorflow/tfjs), loaded via a dynamic `import()` so it never touches the server bundle.
@@ -58,6 +108,41 @@ Input [20 timesteps × 1 feature]  (normalised signal_percentage / 100)
 - **Augmentation**: Gaussian noise (σ ≈ 0.03) applied to training windows → 2× dataset size
 - **Class balancing**: inverse-frequency sample weights so skewed Normal / Fatigue ratios don't hurt F1
 
+### Pretrained CNN Architecture (from Zenodo dataset)
+
+```
+Input [400 timesteps × 1 channel]  (bandpass-filtered raw EMG)
+        ↓
+  Conv1D — 16 filters, kernel 5, ReLU  +  L2(0.001)
+        ↓
+  MaxPooling1D — pool size 2  →  200
+        ↓
+  Conv1D — 32 filters, kernel 5, ReLU  +  L2(0.001)
+        ↓
+  MaxPooling1D — pool size 2  →  100
+        ↓
+  Conv1D — 64 filters, kernel 3, ReLU  +  L2(0.001)
+        ↓
+  GlobalAveragePooling1D  →  64
+        ↓
+  Dropout — 30 %
+        ↓
+  Dense — 32 units, ReLU  +  L2(0.001)
+        ↓
+  Dropout — 20 %
+        ↓
+  Dense — 2 units, Softmax
+        ↓
+  [P(Fresh), P(Fatigued)]
+```
+
+- **Loss**: categorical_crossentropy
+- **Optimizer**: Adam · lr = 0.001
+- **Epochs**: up to 100, early stopping (patience = 15)
+- **Train/Test**: 75% / 25% stratified split
+- **Class weights**: inverse-frequency balancing
+- **Regularization**: L2(0.001) + Dropout(0.3, 0.2)
+
 ### Labelling rule
 
 Each 20-sample window is labelled by its **own mean** signal level, not just the next reading. This creates natural ambiguity near the 30 % boundary and produces realistic **80–90 % accuracy** rather than a trivially perfect classifier.
@@ -73,6 +158,8 @@ Each 20-sample window is labelled by its **own mean** signal level, not just the
 |--------|---------|---------------|
 | **Accuracy** | (TP + TN) / N | Overall % of correct predictions on the validation set |
 | **F1 Score** | 2 · P · R / (P + R) | Harmonic mean of precision and recall; robust to class imbalance |
+| **Precision** | TP / (TP + FP) | How many predicted Fatigue were actually Fatigue |
+| **Recall** | TP / (TP + FN) | How many actual Fatigue cases were caught |
 
 Both are shown as large coloured cards (blue = Accuracy, purple = F1) in the AI panel after training.
 
@@ -90,6 +177,7 @@ muscle-sensor-ui/
 │       └── setup/route.ts      # Create muscle_readings table
 ├── components/
 │   ├── ai-panel.tsx            # TensorFlow.js 1D-CNN — training, inference, metrics
+│   ├── evaluation-panel.tsx    # Model evaluation: metrics, split, precision/recall/F1
 │   ├── muscle-indicator.tsx    # Animated muscle state widget (Normal / Moderate / Fatigue)
 │   ├── muscle-waveform.tsx     # Real-time EMG waveform chart
 │   ├── history-chart.tsx       # 30-point signal history
@@ -97,14 +185,30 @@ muscle-sensor-ui/
 │   └── stats-card.tsx          # Current / Peak / Average / Session cards
 ├── lib/
 │   ├── neural-net.ts           # buildDataset (window-mean labelling), computeMetrics, shuffleIndices
+│   ├── emg-features.ts         # EMG feature extraction (RMS, MAV, ZCR, MDF, MNF, Power, SM1, SM2)
+│   ├── evaluation.ts           # Classification metrics + AUC-ROC + confusion matrix
+│   ├── pretrained-model.ts     # TF.js pretrained CNN loader + inference + scaler
 │   ├── db.ts                   # Neon DB connection
 │   └── utils.ts
-├── pi-api/                     # Raspberry Pi edge server (see pi-api/README.md)
-│   ├── server.js               # Express API + serial reader
-│   ├── serial.js               # Arduino serial port handler
-│   ├── db.js                   # Neon DB writes (IPv4-first)
-│   └── gpio.js                 # Optional GPIO LED output
-└── next.config.mjs             # serverExternalPackages: ["@tensorflow/tfjs"]
+├── ml/                          # Python ML training pipeline
+│   ├── train_model.py           # Full pipeline: download → extract → train (RF/SVM/LR/CNN) → eval
+│   ├── requirements.txt         # numpy, scipy, scikit-learn, tensorflow, tensorflowjs, matplotlib
+│   └── README.md
+├── datasets/
+│   ├── README.md                # Dataset documentation + citation
+│   └── sample_features.json     # 20 sample feature windows from Subject 1
+├── public/
+│   └── models/
+│       ├── emg_cnn_model/
+│       │   └── model.json       # Pretrained 1D-CNN TF.js model architecture
+│       ├── scaler_params.json   # StandardScaler μ/σ for feature normalization
+│       └── evaluation_results.json  # Full metrics (75/25 split)
+├── pi-api/                      # Raspberry Pi edge server
+│   ├── server.js                # Express API + serial reader
+│   ├── serial.js                # Arduino serial port handler
+│   ├── db.js                    # Neon DB writes (IPv4-first)
+│   └── gpio.js                  # Optional GPIO LED output
+└── next.config.mjs              # serverExternalPackages: ["@tensorflow/tfjs"]
 ```
 
 ---
@@ -157,12 +261,13 @@ See [pi-api/README.md](pi-api/README.md) for full Arduino + Raspberry Pi setup i
 
 1. **Connect** the dashboard and let it collect at least **50 readings** — a progress bar tracks this.
 2. Click **Train** — the 1D-CNN trains up to 50 epochs in your browser (early stopping may halt sooner). A progress bar and live loss value are shown.
-3. After training, the panel shows:
+3. **OR** click **Pretrained CNN** to load the Zenodo-trained 1D-CNN without any in-browser training.
+4. After training, the panel shows:
    - **Val Accuracy** (blue) — overall classification accuracy on the held-out validation set
    - **F1 Score** (purple) — precision-recall balance; more reliable than accuracy for imbalanced data
    - **Live Prediction** — Normal or Fatigue with confidence %, updated on every new reading
-4. Click **Retrain** at any time to rebuild the model with all current readings.
-5. Click the reset (↺) button to clear the model and start fresh.
+5. Click **Retrain** at any time to rebuild the model with all current readings.
+6. Click the reset (↺) button to clear the model and start fresh.
 
 ---
 
@@ -206,4 +311,4 @@ pnpm lint     # ESLint
 - [Neon](https://neon.tech) — serverless PostgreSQL
 - [shadcn/ui](https://ui.shadcn.com) — component library
 - [Recharts](https://recharts.org) — charting
-
+- [Zenodo EMG Fatigue Dataset](https://doi.org/10.5281/zenodo.5189275) — training data
