@@ -416,7 +416,7 @@ export default function MuscleSensorDashboard() {
               </div>
               <div className="flex justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">Sample Rate</span>
-                <span className="text-foreground font-medium">500 Hz</span>
+                <span className="text-foreground font-medium">200 Hz</span>
               </div>
               <div className="flex justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">Resolution</span>

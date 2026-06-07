@@ -9,7 +9,8 @@ import {
   CLASS_LABELS,
   computeMetrics,
 } from "@/lib/neural-net";
-import { loadPretrainedCNN, predictWithCNN } from "@/lib/pretrained-model";
+import { loadPretrainedCNN, predictWithCNN, loadEvaluationResults } from "@/lib/pretrained-model";
+import type { EvaluationResults } from "@/lib/pretrained-model";
 
 interface Reading {
   signal_percentage: number;
@@ -47,6 +48,12 @@ export function AIPanel({ readings }: AIPanelProps) {
   const [history, setHistory] = useState<PredictionRecord[]>([]);
   const prevLenRef = useRef(0);
   const historyAccRef = useRef<number | null>(null);
+  const [evalResults, setEvalResults] = useState<EvaluationResults | null>(null);
+
+  // Load evaluation results on mount
+  useEffect(() => {
+    loadEvaluationResults().then(setEvalResults).catch(() => {});
+  }, []);
 
   // Derive actual label from threshold rule
   const getActualLabel = useCallback((r: Reading): number => {
@@ -396,11 +403,88 @@ export function AIPanel({ readings }: AIPanelProps) {
       {/* Idle with enough data */}
       {mode === "idle" && hasEnough && (
         <div className="text-center py-3">
-          <p className="text-sm text-muted-foreground mb-3">
-            Press <span className="text-foreground font-medium">Train</span> to build a 1D-CNN from{" "}
-            <span className="text-foreground font-medium">{readings.length}</span> readings, or{" "}
-            <span className="text-purple-400 font-medium">Pretrained CNN</span> to load the Zenodo-trained model.
-          </p>
+          {evalResults ? (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground mb-2">
+                Pre-Trained CNN Results (Zenodo Dataset, 75/25 Split)
+              </p>
+
+              {/* Accuracy + AUC cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Test Accuracy</p>
+                  <p className="text-xl font-bold text-blue-400">
+                    {evalResults.cnn_model.accuracy != null
+                      ? (evalResults.cnn_model.accuracy * 100).toFixed(1) + "%"
+                      : evalResults.cnn_model.expected_accuracy}
+                  </p>
+                </div>
+                <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground">AUC-ROC</p>
+                  <p className="text-xl font-bold text-purple-400">
+                    {evalResults.cnn_model.auc != null
+                      ? evalResults.cnn_model.auc.toFixed(3)
+                      : evalResults.cnn_model.expected_auc}
+                  </p>
+                </div>
+              </div>
+
+              {/* Precision / Recall / F1 bars */}
+              <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                <p className="text-xs text-muted-foreground mb-1">
+                  Actual vs Predicted (440 test windows)
+                </p>
+                {evalResults.cnn_model.precision_fatigued != null ? (
+                  <>
+                    <div>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="text-muted-foreground">Precision</span>
+                        <span className="font-mono text-blue-400">{((evalResults.cnn_model.precision_fatigued || 0) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-400 rounded-full" style={{ width: `${((evalResults.cnn_model.precision_fatigued || 0) * 100)}%` }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="text-muted-foreground">Recall</span>
+                        <span className="font-mono text-emerald-400">{((evalResults.cnn_model.recall_fatigued || 0) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${((evalResults.cnn_model.recall_fatigued || 0) * 100)}%` }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="text-muted-foreground">F1 Score</span>
+                        <span className="font-mono text-purple-400">{((evalResults.cnn_model.f1_fatigued || 0) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-purple-400 rounded-full" style={{ width: `${((evalResults.cnn_model.f1_fatigued || 0) * 100)}%` }} />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs pt-1">
+                    <div className="bg-secondary rounded p-2">
+                      <p className="text-muted-foreground mb-0.5">RF Accuracy</p>
+                      <p className="font-bold text-blue-400">{((evalResults.feature_models.random_forest as Record<string,number>).accuracy * 100).toFixed(1)}%</p>
+                    </div>
+                    <div className="bg-secondary rounded p-2">
+                      <p className="text-muted-foreground mb-0.5">RF F1</p>
+                      <p className="font-bold text-purple-400">{((evalResults.feature_models.random_forest as Record<string,number>).f1_fatigued * 100).toFixed(1)}%</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Press <span className="text-foreground font-medium">Train</span> to build a 1D-CNN from{" "}
+              <span className="text-foreground font-medium">{readings.length}</span> readings, or{" "}
+              <span className="text-purple-400 font-medium">Pretrained CNN</span> to load the Zenodo-trained model.
+            </p>
+          )}
         </div>
       )}
 

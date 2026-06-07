@@ -647,7 +647,7 @@ def leave_one_subject_out_cv(X, y, subject_ids):
 
 #─ Save Artifacts ────────────────────────────────────────────────────────
 
-def save_feature_artifacts(best_model, scaler):
+def save_feature_artifacts(feature_results, scaler):
     os.makedirs(os.path.dirname(SCALER_PATH), exist_ok=True)
     scaler_params = {
         "mean": scaler.mean_.tolist(),
@@ -658,8 +658,11 @@ def save_feature_artifacts(best_model, scaler):
         json.dump(scaler_params, f, indent=2)
     print(f"Saved: {SCALER_PATH}")
 
-    joblib.dump(best_model, "emg_fatigue_model.pkl")
-    print(f"Saved: emg_fatigue_model.pkl")
+    for name, res in feature_results.items():
+        fname = name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+        path = f"emg_{fname}_model.pkl"
+        joblib.dump(res["model"], path)
+        print(f"Saved: {path}")
 
 
 def save_cnn_tfjs(model, cnn_metrics):
@@ -787,7 +790,7 @@ def main():
         X_feat, y_feat, subj_ids_feat = process_all_subjects_feature_based()
         feature_results, scaler, _, _ = train_feature_models(X_feat, y_feat, save_plots)
         loso_mean, loso_std = leave_one_subject_out_cv(X_feat, y_feat, subj_ids_feat)
-        save_feature_artifacts(feature_results["Random Forest"]["model"], scaler)
+        save_feature_artifacts(feature_results, scaler)
     else:
         feature_results = {}
         loso_mean, loso_std = None, None
