@@ -1,0 +1,7 @@
+numpy>=1.21
+scipy>=1.7
+scikit-learn>=1.0
+joblib>=1.1
+matplotlib>=3.5
+tensorflow>=2.12
+tensorflowjs>=4.10

@@ -20,6 +20,7 @@ import { StatsCard } from "@/components/stats-card";
 import { HistoryChart } from "@/components/history-chart";
 import { ReadingsTable } from "@/components/readings-table";
 import { AIPanel } from "@/components/ai-panel";
+import { EvaluationPanel } from "@/components/evaluation-panel";
 
 interface HistoryDataPoint {
   time: string;
@@ -346,6 +347,9 @@ export default function MuscleSensorDashboard() {
 
           {/* AI Fatigue Classifier */}
           <AIPanel readings={rawReadings} />
+
+          {/* Evaluation Panel — pretrained model metrics */}
+          <EvaluationPanel />
         </div>
 
         {/* Right Column - Muscle Indicator & Device Info */}

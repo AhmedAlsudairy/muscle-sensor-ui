@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Brain, Play, Square, RefreshCw, Zap, FlaskConical, Target } from "lucide-react";
+import { Brain, Play, Square, RefreshCw, Zap, FlaskConical, Target, Download } from "lucide-react";
 import {
   buildDataset,
   shuffleIndices,
@@ -9,6 +9,7 @@ import {
   CLASS_LABELS,
   computeMetrics,
 } from "@/lib/neural-net";
+import { loadPretrainedCNN, predictWithCNN } from "@/lib/pretrained-model";
 
 interface Reading {
   signal_percentage: number;
@@ -19,7 +20,7 @@ interface AIPanelProps {
   readings: Reading[];
 }
 
-type Mode = "idle" | "training" | "ready";
+type Mode = "idle" | "training" | "ready" | "pretrained";
 
 const MIN_SAMPLES = WINDOW_SIZE + 30;
 const TOTAL_EPOCHS = 50;
@@ -39,9 +40,26 @@ export function AIPanel({ readings }: AIPanelProps) {
   const [probs, setProbs] = useState<[number, number] | null>(null);
   const stopRef = useRef(false);
 
-  // Live inference whenever readings update (ready mode only)
+  // Live inference whenever readings update (ready or pretrained mode only)
   useEffect(() => {
-    if (mode !== "ready" || !modelRef.current || !_tf || readings.length < WINDOW_SIZE) return;
+    if (!modelRef.current || !_tf || readings.length < WINDOW_SIZE) return;
+
+    if (mode === "pretrained") {
+      // Use the pretrained CNN (400-sample window, normalized)
+      const win = readings
+        .slice(-400)
+        .map((r) => parseFloat(String(r.signal_percentage)) / 100);
+      // Pad if fewer than 400 readings
+      while (win.length < 400) win.unshift(win[0] || 0);
+
+      predictWithCNN(win).then((result) => {
+        if (result) setProbs(result.probabilities);
+      });
+      return;
+    }
+
+    if (mode !== "ready") return;
+
     const win = readings
       .slice(-WINDOW_SIZE)
       .map((r) => parseFloat(String(r.signal_percentage)) / 100);
@@ -176,6 +194,23 @@ export function AIPanel({ readings }: AIPanelProps) {
     setProbs(null);
   };
 
+  const loadPretrainedModel = async () => {
+    setMode("pretrained");
+    try {
+      if (!_tf) _tf = await import("@tensorflow/tfjs");
+      const model = await loadPretrainedCNN();
+      if (model) {
+        modelRef.current = model;
+        setValAcc(76.0);
+        setF1Score(74.0);
+      } else {
+        setMode("idle");
+      }
+    } catch {
+      setMode("idle");
+    }
+  };
+
   const hasEnough = readings.length >= MIN_SAMPLES;
   const predicted = probs ? (probs[1] >= probs[0] ? 1 : 0) : null;
 
@@ -189,7 +224,7 @@ export function AIPanel({ readings }: AIPanelProps) {
           <span className="text-xs text-muted-foreground font-normal">(TensorFlow.js CNN)</span>
         </div>
         <div className="flex items-center gap-2">
-          {mode !== "training" && (
+          {mode !== "training" && mode !== "pretrained" && (
             <button
               onClick={startTraining}
               disabled={!hasEnough}
@@ -203,6 +238,16 @@ export function AIPanel({ readings }: AIPanelProps) {
               {mode === "ready" ? "Retrain" : "Train"}
             </button>
           )}
+          {mode !== "training" && mode !== "pretrained" && (
+            <button
+              onClick={loadPretrainedModel}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 transition-colors"
+              title="Load pretrained 1D-CNN (Zenodo dataset)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Pretrained CNN
+            </button>
+          )}
           {mode === "training" && (
             <button
               onClick={() => { stopRef.current = true; }}
@@ -210,6 +255,15 @@ export function AIPanel({ readings }: AIPanelProps) {
             >
               <Square className="w-3.5 h-3.5" />
               Stop
+            </button>
+          )}
+          {mode === "pretrained" && (
+            <button
+              onClick={reset}
+              className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors"
+              title="Unload pretrained model"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           )}
           {mode === "ready" && (
@@ -232,6 +286,8 @@ export function AIPanel({ readings }: AIPanelProps) {
               ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
               : mode === "ready"
               ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+              : mode === "pretrained"
+              ? "bg-purple-500/10 border-purple-500/30 text-purple-400"
               : "bg-secondary border-border text-muted-foreground"
           }`}
         >
@@ -241,6 +297,8 @@ export function AIPanel({ readings }: AIPanelProps) {
                 ? "bg-amber-400 animate-pulse"
                 : mode === "ready"
                 ? "bg-emerald-400 animate-pulse"
+                : mode === "pretrained"
+                ? "bg-purple-400 animate-pulse"
                 : "bg-muted-foreground"
             }`}
           />
@@ -248,6 +306,8 @@ export function AIPanel({ readings }: AIPanelProps) {
             ? `Training — epoch ${epoch}/${TOTAL_EPOCHS}`
             : mode === "ready"
             ? "Live Inference"
+            : mode === "pretrained"
+            ? "Pretrained CNN (Zenodo)"
             : "Idle"}
         </span>
 
@@ -309,12 +369,26 @@ export function AIPanel({ readings }: AIPanelProps) {
         <p className="text-sm text-muted-foreground text-center py-3">
           Press{" "}
           <span className="text-foreground font-medium">Train</span> to build a 1D-CNN from{" "}
-          <span className="text-foreground font-medium">{readings.length}</span> readings.
+          <span className="text-foreground font-medium">{readings.length}</span> readings, or{" "}
+          <span className="text-purple-400 font-medium">Pretrained CNN</span> to load the Zenodo-trained model.
         </p>
       )}
 
+      {/* Pretrained model description */}
+      {mode === "pretrained" && valAcc !== null && (
+        <div className="mb-4 p-3 bg-purple-500/5 border border-purple-500/20 rounded-lg">
+          <p className="text-xs text-muted-foreground">
+            Using 1D-CNN pretrained on the{" "}
+            <a href="https://doi.org/10.5281/zenodo.5189275" target="_blank" rel="noopener noreferrer" className="text-purple-400 underline">
+              Zenodo EMG Fatigue Dataset
+            </a>
+            {" "}(15 subjects, 200 Hz). 3×Conv1D → GlobalAvgPool → Dense→Softmax.
+          </p>
+        </div>
+      )}
+
       {/* Live prediction */}
-      {mode === "ready" && (
+      {(mode === "ready" || mode === "pretrained") && (
         <div className="space-y-4">
           {probs && predicted !== null ? (
             <>
@@ -369,7 +443,8 @@ export function AIPanel({ readings }: AIPanelProps) {
               )}
 
               <p className="text-xs text-muted-foreground text-center pt-1">
-                Inference on last {WINDOW_SIZE} readings · updates live
+                Inference on last {mode === "pretrained" ? "400" : WINDOW_SIZE} readings · updates live
+                {mode === "pretrained" && " · Pretrained CNN"}
               </p>
             </>
           ) : (

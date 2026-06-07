@@ -54,7 +54,7 @@ export function MuscleIndicator({ signalStrength }: MuscleIndicatorProps) {
           className={`w-32 h-32 rounded-full border-4 ${config.color} border-opacity-30 flex items-center justify-center transition-all duration-300`}
           style={{
             boxShadow: `0 0 ${signalStrength / 2}px ${signalStrength / 4}px ${
-              status === "contracted"
+              status === "fatigue"
                 ? "rgba(239, 68, 68, 0.3)"
                 : status === "moderate"
                 ? "rgba(251, 191, 36, 0.3)"
