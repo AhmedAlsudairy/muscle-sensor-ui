@@ -92,7 +92,7 @@ _circuit_timer: threading.Timer | None = None
 FLUSH_INTERVAL = 1.0
 MAX_BUFFER = 1000
 CIRCUIT_RESET = 30.0
-FATIGUE_THRESHOLD = 30
+FATIGUE_THRESHOLD = 40
 
 
 def _derive_status(pct: float) -> str:
