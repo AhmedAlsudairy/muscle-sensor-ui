@@ -5,15 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/muscle-sensor-ui/pi-api
-ExecStart=/usr/bin/python3 /home/pi/muscle-sensor-ui/pi-api/server.py
+User=ahmed
+WorkingDirectory=/home/ahmed/muscle-sensor-ui/pi-api
+ExecStart=/usr/bin/python3 /home/ahmed/muscle-sensor-ui/pi-api/server.py
 Restart=always
 RestartSec=5
 ExecStartPre=/bin/sleep 5
-EnvironmentFile=/home/pi/muscle-sensor-ui/pi-api/.env
-StandardOutput=journal
-StandardError=journal
+EnvironmentFile=/home/ahmed/muscle-sensor-ui/pi-api/.env
+StandardOutput=append:/var/log/emg-api.log
+StandardError=append:/var/log/emg-api.log
 SyslogIdentifier=emg-api
 
 [Install]
