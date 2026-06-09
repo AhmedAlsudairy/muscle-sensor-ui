@@ -3,28 +3,18 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { initDB, getReadings, getStats, insertReading } = require("./db");
-const {
-  listPorts,
-  startSerial,
-  stopSerial,
-  isConnected,
-  emitter,
-} = require("./serial");
+const { listPorts, startSerial, stopSerial, isConnected, emitter } = require("./serial");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
-// ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 
-// ── Health check ──────────────────────────────────────────────────────────────
 // GET /health
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", serial: isConnected() });
 });
-
-// ── Serial port management ────────────────────────────────────────────────────
 
 // GET /ports  →  list available serial ports
 app.get("/ports", async (_req, res) => {
@@ -53,7 +43,7 @@ app.post("/connect", (req, res) => {
   }
 
   startSerial(portPath, baudRate);
-  res.json({ message: `Connecting to ${portPath} at ${baudRate} baud…` });
+  res.json({ message: `Connecting to ${portPath} at ${baudRate} baud...` });
 });
 
 // POST /disconnect  →  close Arduino serial port
@@ -62,9 +52,7 @@ app.post("/disconnect", (_req, res) => {
   res.json({ message: "Serial port closed." });
 });
 
-// ── EMG data endpoints ────────────────────────────────────────────────────────
-
-// GET /readings?limit=100&offset=0  →  recent readings from DB
+// GET /readings?limit=100&offset=0
 app.get("/readings", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || "100", 10), 1000);
   const offset = parseInt(req.query.offset || "0", 10);
@@ -81,12 +69,12 @@ app.get("/readings", async (req, res) => {
   }
 });
 
-// GET /stats?minutes=5  →  min/max/avg over last N minutes
+// GET /stats?minutes=5
 app.get("/stats", async (req, res) => {
   const minutes = parseInt(req.query.minutes || "5", 10);
 
   if (isNaN(minutes) || minutes < 1 || minutes > 1440) {
-    return res.status(400).json({ error: "minutes must be 1–1440." });
+    return res.status(400).json({ error: "minutes must be 1-1440." });
   }
 
   try {
@@ -103,7 +91,7 @@ app.post("/readings", async (req, res) => {
   const rawValue = parseInt(req.body.rawValue, 10);
 
   if (isNaN(rawValue) || rawValue < 0 || rawValue > 1023) {
-    return res.status(400).json({ error: "rawValue must be an integer 0–1023." });
+    return res.status(400).json({ error: "rawValue must be an integer 0-1023." });
   }
 
   try {
@@ -114,16 +102,13 @@ app.post("/readings", async (req, res) => {
   }
 });
 
-// ── Server-Sent Events (SSE) live stream ──────────────────────────────────────
-// GET /stream  →  real-time EMG readings pushed as SSE events
-// The v0 dashboard can connect here for live waveform updates.
+// GET /stream  →  Server-Sent Events live feed
 app.get("/stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  // Send a heartbeat every 15 s to keep the connection alive
   const heartbeat = setInterval(() => {
     res.write(": heartbeat\n\n");
   }, 15_000);
@@ -140,11 +125,10 @@ app.get("/stream", (req, res) => {
   });
 });
 
-// ── Startup ───────────────────────────────────────────────────────────────────
+// Startup
 async function main() {
   await initDB();
 
-  // Auto-connect if SERIAL_PORT is set in .env
   if (process.env.SERIAL_PORT) {
     const baudRate = parseInt(process.env.BAUD_RATE || "9600", 10);
     startSerial(process.env.SERIAL_PORT, baudRate);

@@ -10,7 +10,6 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
 }
 
-// Strip channel_binding param — not supported by the pg driver
 const dbUrl = process.env.DATABASE_URL.replace(/[&?]channel_binding=[^&]*/g, "");
 
 const pool = new Pool({
@@ -18,16 +17,11 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
   max: 3,
   idleTimeoutMillis: 60000,
-  connectionTimeoutMillis: 30000, // Neon serverless needs time to wake up
+  connectionTimeoutMillis: 30000,
 });
 
-// Warm up connection on startup
 pool.on("error", (err) => console.error("[DB] Pool error:", err.message));
 
-/**
- * Creates the muscle_readings table (same schema as the Next.js UI).
- * Call once at startup.
- */
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS muscle_readings (
@@ -47,38 +41,35 @@ async function initDB() {
   console.log("[DB] Table muscle_readings ready.");
 }
 
-// Running stats for peak / average tracking
 let _peak = 0;
 let _sum = 0;
 let _count = 0;
 
-// Write buffer — batch flush every FLUSH_INTERVAL ms to avoid hammering Neon
-const FLUSH_INTERVAL = 1000; // flush once per second
-const MAX_BUFFER = 1000;     // drop oldest if Pi is offline from DB too long
+const FLUSH_INTERVAL = 1000;
+const MAX_BUFFER = 1000;
 let _buffer = [];
 let _flushTimer = null;
 
-// Circuit breaker — stop trying after repeated failures
 let _circuitOpen = false;
 let _circuitResetTimer = null;
-const CIRCUIT_RESET_MS = 30000; // retry DB after 30s
+const CIRCUIT_RESET_MS = 30000;
+
+// Two-class system matching dashboard: Normal < 30%, Fatigue >= 30%
+const FATIGUE_THRESHOLD = 30;
 
 function deriveStatus(pct) {
-  if (pct < 30) return "normal";
-  if (pct < 70) return "moderate";
-  return "fatigue";
+  return pct < FATIGUE_THRESHOLD ? "normal" : "fatigue";
 }
 
 async function _flushBuffer() {
   _flushTimer = null;
   if (_buffer.length === 0) return;
   if (_circuitOpen) {
-    // Still tripping — reschedule check but don't insert
     _scheduleFlush();
     return;
   }
 
-  const batch = _buffer.splice(0); // drain buffer atomically
+  const batch = _buffer.splice(0);
   try {
     const placeholders = batch
       .map((_, i) => `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`)
@@ -90,7 +81,6 @@ async function _flushBuffer() {
     );
   } catch (err) {
     console.error(`[DB] Flush failed (${batch.length} readings dropped):`, err.message);
-    // Open circuit — pause inserts for CIRCUIT_RESET_MS
     _circuitOpen = true;
     if (_circuitResetTimer) clearTimeout(_circuitResetTimer);
     _circuitResetTimer = setTimeout(() => {
@@ -105,11 +95,6 @@ function _scheduleFlush() {
   _flushTimer = setTimeout(_flushBuffer, FLUSH_INTERVAL);
 }
 
-/**
- * Buffer an EMG reading; flushed to DB in batches every second.
- * Returns a synthetic record immediately so SSE/REST don't need to wait.
- * @param {number} rawValue  0–1023
- */
 async function insertReading(rawValue) {
   const pct = parseFloat(((rawValue / 1023) * 100).toFixed(2));
   if (pct > _peak) _peak = pct;
@@ -123,13 +108,9 @@ async function insertReading(rawValue) {
     _scheduleFlush();
   }
 
-  // Return synthetic record immediately — DB write happens in background
   return { signal_value: rawValue, signal_percentage: pct, status, peak_value: _peak, average_value: avg, created_at: new Date().toISOString() };
 }
 
-/**
- * Fetch the most recent readings.
- */
 async function getReadings(limit = 100, offset = 0) {
   const { rows } = await pool.query(
     `SELECT id, signal_value, signal_percentage, status, peak_value, average_value, created_at
@@ -139,9 +120,6 @@ async function getReadings(limit = 100, offset = 0) {
   return rows;
 }
 
-/**
- * Return basic stats for the last N minutes.
- */
 async function getStats(minutes = 5) {
   const { rows } = await pool.query(
     `SELECT

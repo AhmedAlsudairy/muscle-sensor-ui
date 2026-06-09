@@ -5,19 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ahmed
-WorkingDirectory=/home/ahmed/Downloads/emg-api
-ExecStart=/usr/bin/node /home/ahmed/Downloads/emg-api/server.js
+User=pi
+WorkingDirectory=/home/pi/muscle-sensor-ui/pi-api
+ExecStart=/usr/bin/node /home/pi/muscle-sensor-ui/pi-api/server.js
 Restart=always
 RestartSec=5
-
-# Give USB serial device time to appear after boot
 ExecStartPre=/bin/sleep 5
-
-# Environment file with DATABASE_URL and SERIAL_PORT
-EnvironmentFile=/home/ahmed/Downloads/emg-api/.env
-
-# Logging
+EnvironmentFile=/home/pi/muscle-sensor-ui/pi-api/.env
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=emg-api

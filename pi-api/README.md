@@ -1,46 +1,30 @@
-# EMG API — Arduino → Serial → Neon DB
+# EMG API — Arduino to Serial to Neon DB
 
-Reads live EMG values from an Arduino over USB serial and stores them in a **Neon (PostgreSQL)** database. Exposes a REST + SSE API for the [Muscle Sensor UI](https://v0-muscle-sensor-ui.vercel.app/).
+Reads live EMG values from an Arduino over USB serial and stores them in a **Neon (PostgreSQL)** database. Exposes a REST + SSE API for the Muscle Sensor UI dashboard.
 
 ---
 
-## Setup
+## Quick Start
 
-### 1. Install dependencies
+### 1. Install
 ```bash
-cd emg-api
+cd pi-api
 npm install
 ```
 
-### 2. Configure environment
+### 2. Configure
 ```bash
 cp .env.example .env
-# Edit .env and fill in your Neon DB URL and serial port
+# Edit .env with your Neon DB URL and serial port
 ```
 
-Get your `DATABASE_URL` from [console.neon.tech](https://console.neon.tech) → your project → **Connection string**.
-
-### 3. Find your Arduino port (Linux)
-```bash
-ls /dev/tty{USB,ACM}*
-# Usually /dev/ttyUSB0 or /dev/ttyACM0
-```
-
-If you get a **Permission denied** error:
-```bash
-sudo usermod -aG dialout $USER
-# Then log out and back in
-```
-
-### 4. Flash the Arduino
-Upload this sketch to your Arduino UNO:
+### 3. Flash Arduino
+Upload this sketch to your Arduino UNO (Grove EMG Sensor on A0):
 ```cpp
 int EMGPin = A0;
 int EMGVal = 0;
 
-void setup() {
-  Serial.begin(9600);
-}
+void setup() { Serial.begin(9600); }
 
 void loop() {
   EMGVal = analogRead(EMGPin);
@@ -49,14 +33,13 @@ void loop() {
 }
 ```
 
-### 5. Start the server
+### 4. Start
 ```bash
-npm start
-# or for auto-reload during development:
-npm run dev
+npm start       # production
+npm run dev     # auto-reload (nodemon)
 ```
 
-The server starts on `http://localhost:3000` and **auto-connects** to the serial port defined in `.env`.
+Server runs on `http://localhost:3001` (avoiding conflict with Next.js on 3000).
 
 ---
 
@@ -64,58 +47,74 @@ The server starts on `http://localhost:3000` and **auto-connects** to the serial
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Server status + serial connection state |
+| `GET` | `/health` | Server status + serial state |
 | `GET` | `/ports` | List available serial ports |
-| `POST` | `/connect` | Open Arduino serial port |
+| `POST` | `/connect` | Open Arduino serial `{ "port": "/dev/ttyUSB0", "baudRate": 9600 }` |
 | `POST` | `/disconnect` | Close serial port |
-| `GET` | `/readings` | Recent readings from DB |
-| `GET` | `/stats` | Min / max / avg over last N minutes |
-| `POST` | `/readings` | Manual insert (testing) |
-| `GET` | `/stream` | **SSE** live feed (real-time waveform) |
+| `GET` | `/readings?limit=100` | Recent readings from DB |
+| `GET` | `/stats?minutes=5` | Min/max/avg over N minutes |
+| `POST` | `/readings` | Manual test insert `{ "rawValue": 512 }` |
+| `GET` | `/stream` | **SSE** real-time live feed |
 
-### POST /connect
-```json
-{ "port": "/dev/ttyUSB0", "baudRate": 9600 }
-```
+---
 
-### GET /readings
-```
-/readings?limit=100&offset=0
-```
-Returns array of `{ id, raw_value, percentage, created_at }`.
+## Status Classification (Two-Class)
 
-### GET /stats
-```
-/stats?minutes=5
-```
-Returns `{ total, min_raw, max_raw, avg_raw, avg_pct }`.
+| Status | Threshold | LED |
+|--------|-----------|-----|
+| **Normal** | `< 30%` | Green ON |
+| **Fatigue** | `>= 30%` | Red ON + Buzzer |
 
-### POST /readings (test without Arduino)
-```json
-{ "rawValue": 512 }
-```
-
-### GET /stream (Server-Sent Events)
-Connect from the dashboard frontend:
-```js
-const es = new EventSource("http://localhost:3000/stream");
-es.onmessage = (e) => {
-  const { raw_value, percentage, created_at } = JSON.parse(e.data);
-  // update chart...
-};
-```
+Matches the dashboard's two-class muscle state indicator.
 
 ---
 
 ## DB Schema
 
 ```sql
-CREATE TABLE emg_readings (
-  id          BIGSERIAL PRIMARY KEY,
-  raw_value   INTEGER        NOT NULL,   -- 0–1023 from Arduino 10-bit ADC
-  percentage  NUMERIC(5,2)   NOT NULL,   -- 0.00–100.00 %
-  created_at  TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+CREATE TABLE muscle_readings (
+  id                SERIAL PRIMARY KEY,
+  signal_value      DECIMAL(10, 2) NOT NULL,   -- 0-1023 from ADC
+  signal_percentage DECIMAL(5, 2)  NOT NULL,   -- 0-100%
+  status            VARCHAR(20)    NOT NULL,   -- 'normal' | 'fatigue'
+  peak_value        DECIMAL(10, 2),
+  average_value     DECIMAL(10, 2),
+  created_at        TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 ```
 
-Created automatically on first startup.
+Auto-created on startup via `initDB()`.
+
+---
+
+## Config (`config.json`)
+
+```json
+{
+  "port": 3001,
+  "serial": { "baudRate": 9600 },
+  "emg": { "thresholdFatigue": 30, "labels": { "normal": "Normal", "fatigue": "Fatigue" } },
+  "gpio": { "pins": { "redLed": 14, "greenLed": 15, "buzzer": 18 } }
+}
+```
+
+---
+
+## GPIO Wiring (Raspberry Pi 5)
+
+| GPIO Pin | Component | Purpose |
+|----------|-----------|---------|
+| 14 | Red LED | Fatigue indicator |
+| 15 | Green LED | Normal indicator |
+| 18 | Buzzer | Audible fatigue alert |
+
+---
+
+## systemd Service
+
+```bash
+sudo cp emg-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable emg-api
+sudo systemctl start emg-api
+```

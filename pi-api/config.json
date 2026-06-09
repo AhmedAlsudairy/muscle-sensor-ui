@@ -1,0 +1,37 @@
+{
+  "name": "emg-api",
+  "version": "1.0.0",
+  "description": "Arduino EMG sensor -> Serial -> Neon DB -> REST + SSE API",
+  "port": 3001,
+  "serial": {
+    "port": "/dev/ttyUSB0",
+    "baudRate": 9600
+  },
+  "database": {
+    "type": "neon-postgresql",
+    "table": "muscle_readings",
+    "flushIntervalMs": 1000,
+    "maxBuffer": 1000,
+    "circuitResetMs": 30000
+  },
+  "emg": {
+    "adcMax": 1023,
+    "thresholdFatigue": 30,
+    "labels": {
+      "normal": "Normal",
+      "fatigue": "Fatigue"
+    }
+  },
+  "gpio": {
+    "enabled": true,
+    "pins": {
+      "redLed": 14,
+      "greenLed": 15,
+      "buzzer": 18
+    },
+    "states": {
+      "normal": { "greenLed": true, "redLed": false, "buzzer": false },
+      "fatigue": { "greenLed": false, "redLed": true, "buzzer": true }
+    }
+  }
+}
