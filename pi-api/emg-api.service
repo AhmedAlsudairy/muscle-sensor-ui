@@ -1,5 +1,5 @@
 [Unit]
-Description=EMG Arduino API — Serial to Neon DB
+Description=EMG Arduino API — Serial to Neon DB (Python)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/muscle-sensor-ui/pi-api
-ExecStart=/usr/bin/node /home/pi/muscle-sensor-ui/pi-api/server.js
+ExecStart=/usr/bin/python3 /home/pi/muscle-sensor-ui/pi-api/server.py
 Restart=always
 RestartSec=5
 ExecStartPre=/bin/sleep 5
