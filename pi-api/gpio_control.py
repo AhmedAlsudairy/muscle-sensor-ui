@@ -51,7 +51,13 @@ except ImportError:
 
 
 def set_gpio_state(status: str) -> None:
-    """Drive LEDs and buzzer based on EMG status."""
+    """Drive LEDs and buzzer based on EMG status.
+
+    status values:
+      'normal'  — sensor on muscle, signal <30%  → Green ON
+      'fatigue' — sensor on muscle, signal >=30% → Red ON + Buzzer ON
+      'idle'    — no signal / sensor off muscle  → all OFF
+    """
     global _state
 
     if not _pinctrl_available and not _use_rpi:
@@ -63,13 +69,17 @@ def set_gpio_state(status: str) -> None:
 
     try:
         if status == "normal":
-            _write_pin(15, True)   # Green ON
+            _write_pin(15, True)   # Green ON  — sensor connected, normal
             _write_pin(14, False)  # Red OFF
             _write_pin(18, False)  # Buzzer OFF
         elif status == "fatigue":
             _write_pin(15, False)  # Green OFF
-            _write_pin(14, True)   # Red ON
+            _write_pin(14, True)   # Red ON   — fatigue detected
             _write_pin(18, True)   # Buzzer ON
+        else:  # 'idle' — sensor off muscle or no signal
+            _write_pin(15, False)  # Green OFF
+            _write_pin(14, False)  # Red OFF
+            _write_pin(18, False)  # Buzzer OFF
         print(f"[GPIO] -> {status}")
     except Exception as e:
         print(f"[GPIO] Write error: {e}")

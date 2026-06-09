@@ -17,6 +17,34 @@ _port: serial.Serial | None = None
 _thread: threading.Thread | None = None
 _active = threading.Event()
 
+# Watchdog: if no valid reading arrives within this window, the sensor is
+# considered off the muscle and all LEDs are turned off.
+_SENSOR_TIMEOUT = 2.0  # seconds
+_watchdog_timer: threading.Timer | None = None
+
+
+def _on_sensor_idle() -> None:
+    """Called by watchdog when no readings received for _SENSOR_TIMEOUT seconds."""
+    set_gpio_state("idle")
+    print("[Serial] No signal — sensor off muscle.")
+
+
+def _reset_watchdog() -> None:
+    """Restart the inactivity timer on every valid reading."""
+    global _watchdog_timer
+    if _watchdog_timer:
+        _watchdog_timer.cancel()
+    _watchdog_timer = threading.Timer(_SENSOR_TIMEOUT, _on_sensor_idle)
+    _watchdog_timer.daemon = True
+    _watchdog_timer.start()
+
+
+def _cancel_watchdog() -> None:
+    global _watchdog_timer
+    if _watchdog_timer:
+        _watchdog_timer.cancel()
+        _watchdog_timer = None
+
 
 def list_ports() -> list:
     """List all available serial ports."""
@@ -53,6 +81,7 @@ def _read_loop(baud_rate: int) -> None:
 
             row = insert_reading(raw)
             set_gpio_state(row["status"])
+            _reset_watchdog()  # sensor is on muscle — keep LEDs active
             emitter.emit("reading", row)
 
         except (ValueError, UnicodeDecodeError):
@@ -89,6 +118,8 @@ def stop_serial() -> None:
     """Close serial port and stop reading thread."""
     global _port, _thread, _active
     _active.clear()
+    _cancel_watchdog()
+    set_gpio_state("idle")  # turn all LEDs off when serial is closed
 
     if _thread and _thread.is_alive():
         _thread.join(timeout=2)
