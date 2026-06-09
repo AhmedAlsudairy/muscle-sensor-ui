@@ -16,6 +16,12 @@ emitter = EventEmitter()
 _port: serial.Serial | None = None
 _thread: threading.Thread | None = None
 _active = threading.Event()
+_last_raw: int = 0
+
+
+def get_last_raw() -> int:
+    """Return the most recent raw ADC value from the Arduino."""
+    return _last_raw
 
 # Watchdog: if no valid reading arrives within this window, the sensor is
 # considered off the muscle and all LEDs are turned off.
@@ -79,6 +85,8 @@ def _read_loop(baud_rate: int) -> None:
             if raw < 0 or raw > 1023:
                 continue
 
+            global _last_raw
+            _last_raw = raw
             row = insert_reading(raw)
             set_gpio_state(row["status"])
             _reset_watchdog()  # sensor is on muscle — keep LEDs active

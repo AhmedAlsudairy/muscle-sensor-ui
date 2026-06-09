@@ -9,8 +9,8 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from db import init_db, get_readings, get_stats, insert_reading
-from serial_reader import list_ports, start_serial, stop_serial, is_connected, emitter
+from db import init_db, get_readings, get_stats, insert_reading, set_calibration_baseline, get_calibration_baseline
+from serial_reader import list_ports, start_serial, stop_serial, is_connected, emitter, get_last_raw
 
 load_dotenv()
 
@@ -129,6 +129,32 @@ def post_reading():
         return jsonify(row), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/calibrate", methods=["GET"])
+def calibrate_get():
+    """Return current calibration baseline."""
+    baseline = get_calibration_baseline()
+    return jsonify({
+        "baseline_raw": int(baseline),
+        "baseline_pct": round(baseline / 1023 * 100, 2),
+        "last_raw":     get_last_raw(),
+        "last_pct":     round(max(0.0, (get_last_raw() - baseline) / max(1023 - baseline, 1) * 100), 2),
+    })
+
+
+@app.route("/calibrate", methods=["POST"])
+def calibrate_post():
+    """Set current ADC reading as the baseline (call when sensor is OFF the muscle)."""
+    if not is_connected():
+        return jsonify({"error": "Serial not connected. POST /connect first."}), 400
+    raw = get_last_raw()
+    set_calibration_baseline(raw)
+    return jsonify({
+        "message":      "Calibration saved. Percentages now relative to this baseline.",
+        "baseline_raw": raw,
+        "baseline_pct": round(raw / 1023 * 100, 2),
+    })
 
 
 @app.route("/stream")

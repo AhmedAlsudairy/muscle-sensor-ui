@@ -94,6 +94,24 @@ MAX_BUFFER = 1000
 CIRCUIT_RESET = 30.0
 FATIGUE_THRESHOLD = 40
 
+# Calibration baseline — ADC value recorded when sensor is off the muscle.
+# Percentage is calculated relative to this floor so noise = ~0%.
+_calibration_baseline: float = 0.0
+
+
+def set_calibration_baseline(raw_value: float) -> None:
+    global _calibration_baseline, _peak, _sum, _count
+    _calibration_baseline = float(raw_value)
+    # Reset session stats so peak/avg reflect post-calibration readings only
+    _peak = 0.0
+    _sum = 0.0
+    _count = 0
+    print(f"[DB] Calibration baseline set: {raw_value:.0f} ADC ({raw_value/1023*100:.2f}%)")
+
+
+def get_calibration_baseline() -> float:
+    return _calibration_baseline
+
 
 def _derive_status(pct: float) -> str:
     return "normal" if pct < FATIGUE_THRESHOLD else "fatigue"
@@ -151,7 +169,9 @@ def _schedule_flush() -> None:
 def insert_reading(raw_value: int) -> dict:
     global _peak, _sum, _count
 
-    pct = round((raw_value / 1023) * 100, 2)
+    # Calibrated percentage: distance above baseline relative to remaining range
+    effective_range = max(1023 - _calibration_baseline, 1)
+    pct = round(max(0.0, (raw_value - _calibration_baseline) / effective_range * 100), 2)
     if pct > _peak:
         _peak = pct
     _sum += pct
