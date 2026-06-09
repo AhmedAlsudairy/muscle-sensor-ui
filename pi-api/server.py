@@ -1,8 +1,8 @@
-# server.py — Flask API + SSE live stream + serial management
-# Drop-in replacement for server.js (Node.js → Python)
+# server.py — Flask API + SSE live stream + serial management (Python)
 import os
 import time
 import json
+import queue
 import threading
 
 from flask import Flask, request, jsonify, Response
@@ -134,9 +134,7 @@ def post_reading():
 @app.route("/stream")
 def stream():
     """Server-Sent Events live feed."""
-    import queue
-
-    q = queue.Queue()
+    q = queue.Queue(maxsize=200)
 
     with _sse_lock:
         _sse_clients.append(q)
@@ -170,8 +168,32 @@ def stream():
 
 # ── Startup ───────────────────────────────────────────────────────────────
 
+def _init_db_retry() -> None:
+    """Retry DB init in background with exponential back-off until it succeeds."""
+    delay = 10
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            init_db()
+            print(f"[DB] Ready (attempt {attempt}).")
+            return
+        except Exception as e:
+            print(f"[DB] Attempt {attempt} failed: {e}. Retrying in {delay}s...")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+
+
 def main():
-    init_db()
+    # Try DB once synchronously; if it fails keep retrying in a daemon thread
+    # so the HTTP server always starts — never crash-loops.
+    try:
+        init_db()
+        print("[DB] Ready.")
+    except Exception as e:
+        print(f"[DB] Startup connect failed: {e}")
+        print("[DB] Starting in degraded mode — retrying DB in background...")
+        threading.Thread(target=_init_db_retry, daemon=True).start()
 
     if os.getenv("SERIAL_PORT"):
         baud_rate = int(os.getenv("BAUD_RATE", "9600"))
@@ -192,8 +214,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"[Startup] Fatal error: {e}")
-        exit(1)
+    main()

@@ -1,10 +1,12 @@
-# db.py — Neon PostgreSQL connection + batch inserts
-# Drop-in replacement for db.js (pg → psycopg2)
+# db.py — Neon PostgreSQL connection + batch inserts (Python)
+# Uses socket.getaddrinfo + psycopg2 hostaddr to force IPv4.
+# Raspberry Pi has no IPv6 route; connecting to all resolved IPs hangs.
 import os
-import time
+import socket
 import threading
+import time
+from urllib.parse import urlparse
 
-import dns.resolver
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
@@ -15,21 +17,42 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
 
-# Force IPv4 — Neon on Raspberry Pi needs it
-dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
-dns.resolver.default_resolver.nameservers = ["8.8.8.8", "1.1.1.1"]
+# Parse the connection URL once so we can use hostaddr= for IPv4 forcing
+_parsed  = urlparse(DATABASE_URL)
+_DB_HOST = _parsed.hostname
+_DB_PORT = _parsed.port or 5432
+_DB_USER = _parsed.username
+_DB_PASS = _parsed.password
+_DB_NAME = _parsed.path.lstrip("/")
 
-_pool: psycopg2.extensions.connection | None = None
-_lock = threading.Lock()
+_conn: psycopg2.extensions.connection | None = None
+_conn_lock = threading.Lock()
 
 # ── Connection ────────────────────────────────────────────────────────────
 
-def _get_conn():
-    global _pool
-    if _pool is None or _pool.closed:
-        _pool = psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=30)
-        _pool.autocommit = True
-    return _pool
+def _resolve_ipv4(hostname: str, port: int) -> str:
+    """Return the first IPv4 address for hostname (skips IPv6 entirely)."""
+    results = socket.getaddrinfo(hostname, port, socket.AF_INET, socket.SOCK_STREAM)
+    return results[0][4][0]
+
+
+def _get_conn() -> psycopg2.extensions.connection:
+    global _conn
+    if _conn is None or _conn.closed:
+        ipv4 = _resolve_ipv4(_DB_HOST, _DB_PORT)
+        _conn = psycopg2.connect(
+            host=_DB_HOST,   # kept for SSL SNI — Neon routes connections by hostname
+            hostaddr=ipv4,   # actual IP to dial — forces IPv4, bypasses IPv6
+            port=_DB_PORT,
+            user=_DB_USER,
+            password=_DB_PASS,
+            dbname=_DB_NAME,
+            sslmode="require",
+            connect_timeout=30,
+        )
+        _conn.autocommit = True
+        print(f"[DB] Connected to {_DB_HOST} via {ipv4}.")
+    return _conn
 
 
 # ── Schema ───────────────────────────────────────────────────────────────

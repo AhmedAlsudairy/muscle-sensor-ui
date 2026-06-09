@@ -16,7 +16,7 @@ After reboot, your prompt will show: `ahmed@emg:~ $`
 
 ```bash
 # Copy service file
-sudo cp /home/ahmed/muscle-sensor-ui/pi-api/emg-api.service /etc/systemd/system/
+sudo cp /home/ahmed/Downloads/muscle-sensor-ui/pi-api/emg-api.service /etc/systemd/system/
 
 # Reload + enable + start
 sudo systemctl daemon-reload
@@ -33,16 +33,13 @@ sudo systemctl status emg-api
 
 ```bash
 # Real-time (follow)
-tail -f /var/log/emg-api.log
-
-# Or via journalctl
 sudo journalctl -u emg-api -f
 
 # Last 50 lines
-tail -50 /var/log/emg-api.log
+sudo journalctl -u emg-api -n 50 --no-pager
 
 # Search for errors
-grep -i error /var/log/emg-api.log
+sudo journalctl -u emg-api --no-pager | grep -i error
 ```
 
 ---
@@ -59,21 +56,37 @@ sudo systemctl disable emg-api    # Disable auto-start
 
 ---
 
-## 5. Alternative: crontab @reboot
+## 5. Connect / Disconnect Arduino Serial
 
 ```bash
-crontab -e
-# Add line:
-@reboot /home/ahmed/muscle-sensor-ui/pi-api/launch.sh
+# Connect (replace port if needed — check with: ls /dev/ttyUSB* /dev/ttyACM*)
+curl -X POST http://localhost:3000/connect \
+     -H "Content-Type: application/json" \
+     -d '{"port":"/dev/ttyUSB0","baudRate":9600}'
+
+# Disconnect
+curl -X POST http://localhost:3000/disconnect
 ```
 
 ---
 
-## 6. Test API
+## 6. Alternative: crontab @reboot
 
 ```bash
-curl http://localhost:3001/health
-curl http://localhost:3001/ports
+crontab -e
+# Add line:
+@reboot /home/ahmed/Downloads/muscle-sensor-ui/pi-api/launch.sh
+```
+
+---
+
+## 7. Test API
+
+```bash
+curl http://localhost:3000/health
+curl http://localhost:3000/ports
+curl http://localhost:3000/readings
+curl http://localhost:3000/stats
 ```
 
 ---
@@ -82,8 +95,11 @@ curl http://localhost:3001/ports
 
 | File | Path |
 |------|------|
-| Server | `/home/ahmed/muscle-sensor-ui/pi-api/server.py` |
-| .env | `/home/ahmed/muscle-sensor-ui/pi-api/.env` |
+| Server | `/home/ahmed/Downloads/muscle-sensor-ui/pi-api/server.py` |
+| DB layer | `/home/ahmed/Downloads/muscle-sensor-ui/pi-api/db.py` |
+| Serial reader | `/home/ahmed/Downloads/muscle-sensor-ui/pi-api/serial_reader.py` |
+| GPIO control | `/home/ahmed/Downloads/muscle-sensor-ui/pi-api/gpio_control.py` |
+| .env | `/home/ahmed/Downloads/emg-api/.env` |
 | Service | `/etc/systemd/system/emg-api.service` |
-| Logs | `/var/log/emg-api.log` |
-| Launch script | `/home/ahmed/muscle-sensor-ui/pi-api/launch.sh` |
+| Logs | `sudo journalctl -u emg-api` |
+| Launch script | `/home/ahmed/Downloads/muscle-sensor-ui/pi-api/launch.sh` |
