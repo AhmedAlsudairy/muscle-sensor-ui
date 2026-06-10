@@ -132,6 +132,22 @@ def post_reading():
         return jsonify({"error": str(e)}), 500
 
 
+import socket as _socket
+
+
+@app.route("/info")
+def info():
+    """Return Pi network address so the UI can display the access URL."""
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        ip = "127.0.0.1"
+    return jsonify({"ip": ip, "port": PORT, "url": f"http://{ip}:{PORT}"})
+
+
 @app.route("/")
 def index():
     return render_template("index.html")

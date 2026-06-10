@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EMG Monitor</title>
+  <title>EMG · AD8232</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -154,15 +154,36 @@
     <div id="bar-fill" class="bar-fill" style="background:#334155"></div>
   </div>
 
-  <button class="btn-calibrate" onclick="calibrate()">
-    ◎ &nbsp;Calibrate
-  </button>
-  <p class="hint">Press while sensor is on skin but muscle is fully relaxed.<br>This zeroes out resting noise.</p>
+  <!-- Step 1: worn calibration -->
+  <div style="margin-top:20px;background:#0f172a;border-radius:12px;padding:16px">
+    <div style="font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:#475569;margin-bottom:10px">Calibration</div>
 
-  <div class="meta">
-    <div>baseline <span id="meta-baseline">—</span></div>
-    <div>threshold <span id="meta-threshold">—</span></div>
-    <div>raw <span id="meta-raw">—</span></div>
+    <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
+      <div style="width:24px;height:24px;border-radius:50%;background:#1d4ed8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;margin-top:2px">1</div>
+      <div style="flex:1">
+        <div style="font-size:.85rem;font-weight:600;margin-bottom:3px">Sensor worn — muscle relaxed</div>
+        <div style="font-size:.72rem;color:#64748b;line-height:1.45;margin-bottom:8px">Attach electrodes to skin. Keep muscle fully relaxed. Tap to zero resting noise.</div>
+        <button class="btn-calibrate" id="btn-worn" onclick="calWorn()" style="margin-bottom:4px">⚙ Calibrate (wearing)</button>
+        <div style="font-size:.72rem;min-height:16px;text-align:center" id="msg-worn"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <div style="width:24px;height:24px;border-radius:50%;background:#374151;color:#9ca3af;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;margin-top:2px">2</div>
+      <div style="flex:1">
+        <div style="font-size:.85rem;font-weight:600;color:#9ca3af;margin-bottom:3px">Contract muscle to test</div>
+        <div style="font-size:.72rem;color:#475569;line-height:1.45">After calibrating, flex. Bar rises → Red LED + buzzer fires above threshold.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Network access -->
+  <div style="margin-top:12px;background:#0f172a;border-radius:12px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div style="min-width:0">
+      <div style="font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:#475569;margin-bottom:3px">Access from any device on same Wi-Fi</div>
+      <div style="font-size:.82rem;font-family:monospace;color:#38bdf8;word-break:break-all" id="net-url">loading…</div>
+    </div>
+    <button id="copy-btn" onclick="copyUrl()" style="background:#1d4ed8;border:none;color:#fff;padding:6px 12px;border-radius:6px;font-size:.72rem;cursor:pointer;flex-shrink:0;transition:background .15s">Copy</button>
   </div>
 </div>
 
@@ -170,15 +191,20 @@
 
 <script>
   const COLOR = { normal: '#4ade80', fatigue: '#f87171', idle: '#334155' };
+  let _url = '';
+
+  // Load Pi URL once
+  fetch('/info').then(r => r.json()).then(d => {
+    _url = d.url;
+    document.getElementById('net-url').textContent = d.url;
+  }).catch(() => {
+    _url = window.location.origin;
+    document.getElementById('net-url').textContent = _url;
+  });
 
   async function refresh() {
     try {
-      const [calRes, healthRes] = await Promise.all([
-        fetch('/calibrate'),
-        fetch('/health'),
-      ]);
-      const cal    = await calRes.json();
-      const health = await healthRes.json();
+      const cal = await fetch('/calibrate').then(r => r.json());
 
       const pct    = cal.current_pct ?? 0;
       const status = cal.status ?? 'idle';
@@ -186,7 +212,7 @@
 
       // Serial dot
       const dot = document.getElementById('serial-dot');
-      dot.className = 'dot ' + (health.serial ? 'on' : 'off');
+      dot.className = 'dot ' + (cal.serial ? 'on' : 'off');
 
       // Big number
       const val = document.getElementById('pct-value');
@@ -208,21 +234,52 @@
       document.getElementById('meta-threshold').textContent = `${cal.threshold_pct}%`;
       document.getElementById('meta-raw').textContent       = cal.last_raw;
 
-    } catch (_) { /* server unreachable */ }
-  }
-
-  async function calibrate() {
-    try {
-      await fetch('/calibrate', { method: 'POST' });
-      const t = document.getElementById('toast');
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 2200);
-      refresh();
     } catch (_) {}
   }
 
+  async function calWorn() {
+    const btn = document.getElementById('btn-worn');
+    const msg = document.getElementById('msg-worn');
+    btn.disabled = true;
+    msg.style.color = '#94a3b8';
+    msg.textContent = 'Calibrating…';
+    try {
+      const r = await fetch('/calibrate', { method: 'POST' });
+      const d = await r.json();
+      if (r.ok) {
+        msg.style.color = '#4ade80';
+        msg.textContent = `✓ Baseline: ${d.baseline_raw} ADC (${d.baseline_pct}%)`;
+        showToast('Calibrated ✓');
+        refresh();
+      } else {
+        msg.style.color = '#f87171';
+        msg.textContent = d.error ?? 'Failed';
+      }
+    } catch (e) {
+      msg.style.color = '#f87171';
+      msg.textContent = 'Error: ' + e.message;
+    }
+    btn.disabled = false;
+  }
+
+  function copyUrl() {
+    const btn = document.getElementById('copy-btn');
+    navigator.clipboard.writeText(_url || window.location.origin).then(() => {
+      btn.textContent = 'Copied!';
+      btn.style.background = '#15803d';
+      setTimeout(() => { btn.textContent = 'Copy'; btn.style.background = '#1d4ed8'; }, 2000);
+    });
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
   refresh();
-  setInterval(refresh, 400);
+  setInterval(refresh, 350);
 </script>
 
 </body>
