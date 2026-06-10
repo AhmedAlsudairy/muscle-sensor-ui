@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EMG Monitor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    h1 { font-size: 1rem; letter-spacing: 3px; text-transform: uppercase; color: #475569; }
+
+    .card {
+      background: #1e293b;
+      border-radius: 20px;
+      padding: 36px 32px;
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+      box-shadow: 0 8px 32px #0006;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 18px;
+      border-radius: 99px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+      transition: all 0.3s;
+    }
+    .status-badge.normal  { background: #14532d; color: #4ade80; }
+    .status-badge.fatigue { background: #450a0a; color: #f87171; }
+    .status-badge.idle    { background: #1e3a5f; color: #60a5fa; border: 1px solid #1d4ed8; }
+
+    .pct-value {
+      font-size: 5.5rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -2px;
+      transition: color 0.3s;
+    }
+    .pct-unit { font-size: 2rem; font-weight: 400; }
+    .pct-label { font-size: 0.75rem; color: #475569; margin-top: 6px; letter-spacing: 1px; text-transform: uppercase; }
+
+    .bar-track {
+      background: #0f172a;
+      border-radius: 99px;
+      height: 14px;
+      margin: 24px 0 28px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.25s ease, background 0.3s;
+    }
+
+    .threshold-marker {
+      position: relative;
+      height: 0;
+    }
+
+    .btn-calibrate {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      background: #3b82f6;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.5px;
+    }
+    .btn-calibrate:hover  { background: #2563eb; }
+    .btn-calibrate:active { background: #1d4ed8; transform: scale(0.98); }
+
+    .hint {
+      font-size: 0.78rem;
+      color: #475569;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .meta {
+      font-size: 0.78rem;
+      color: #334155;
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .meta span { color: #64748b; }
+
+    /* serial indicator dot */
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .dot.on  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+    .dot.off { background: #ef4444; }
+
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #22c55e;
+      color: #fff;
+      padding: 10px 28px;
+      border-radius: 99px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<h1><span id="serial-dot" class="dot off"></span>EMG · AD8232</h1>
+
+<div class="card">
+  <div id="status-badge" class="status-badge idle">idle</div>
+
+  <div id="pct-value" class="pct-value" style="color:#334155">
+    --<span class="pct-unit"></span>
+  </div>
+  <div class="pct-label">muscle activation</div>
+
+  <div class="bar-track">
+    <div id="bar-fill" class="bar-fill" style="background:#334155"></div>
+  </div>
+
+  <button class="btn-calibrate" onclick="calibrate()">
+    ◎ &nbsp;Calibrate
+  </button>
+  <p class="hint">Press while sensor is on skin but muscle is fully relaxed.<br>This zeroes out resting noise.</p>
+
+  <div class="meta">
+    <div>baseline <span id="meta-baseline">—</span></div>
+    <div>threshold <span id="meta-threshold">—</span></div>
+    <div>raw <span id="meta-raw">—</span></div>
+  </div>
+</div>
+
+<div id="toast" class="toast">Calibrated ✓</div>
+
+<script>
+  const COLOR = { normal: '#4ade80', fatigue: '#f87171', idle: '#334155' };
+
+  async function refresh() {
+    try {
+      const [calRes, healthRes] = await Promise.all([
+        fetch('/calibrate'),
+        fetch('/health'),
+      ]);
+      const cal    = await calRes.json();
+      const health = await healthRes.json();
+
+      const pct    = cal.current_pct ?? 0;
+      const status = cal.status ?? 'idle';
+      const color  = COLOR[status] ?? COLOR.idle;
+
+      // Serial dot
+      const dot = document.getElementById('serial-dot');
+      dot.className = 'dot ' + (health.serial ? 'on' : 'off');
+
+      // Big number
+      const val = document.getElementById('pct-value');
+      val.innerHTML = `${pct.toFixed(1)}<span class="pct-unit">%</span>`;
+      val.style.color = color;
+
+      // Bar
+      const bar = document.getElementById('bar-fill');
+      bar.style.width      = Math.min(pct, 100) + '%';
+      bar.style.background = color;
+
+      // Badge
+      const badge = document.getElementById('status-badge');
+      badge.textContent = status;
+      badge.className   = 'status-badge ' + status;
+
+      // Meta
+      document.getElementById('meta-baseline').textContent  = `${cal.baseline_raw} ADC`;
+      document.getElementById('meta-threshold').textContent = `${cal.threshold_pct}%`;
+      document.getElementById('meta-raw').textContent       = cal.last_raw;
+
+    } catch (_) { /* server unreachable */ }
+  }
+
+  async function calibrate() {
+    try {
+      await fetch('/calibrate', { method: 'POST' });
+      const t = document.getElementById('toast');
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2200);
+      refresh();
+    } catch (_) {}
+  }
+
+  refresh();
+  setInterval(refresh, 400);
+</script>
+
+</body>
+</html>

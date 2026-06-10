@@ -5,7 +5,7 @@ import json
 import queue
 import threading
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -132,16 +132,26 @@ def post_reading():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
 @app.route("/calibrate", methods=["GET"])
 def calibrate_get():
     """Return current calibration state and live EMA envelope percentage."""
     baseline = get_calibration_baseline()
+    pct      = get_current_pct()
+    thresh   = 15
+    status   = "idle" if not is_connected() else ("fatigue" if pct >= thresh else "normal")
     return jsonify({
         "baseline_raw":  int(baseline),
         "baseline_pct":  round(baseline / 1023 * 100, 2),
         "last_raw":      get_last_raw(),
-        "current_pct":   get_current_pct(),  # AD8232 EMA envelope %
-        "threshold_pct": 15,
+        "current_pct":   pct,
+        "threshold_pct": thresh,
+        "status":        status,
+        "serial":        is_connected(),
     })
 
 
