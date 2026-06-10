@@ -82,6 +82,13 @@ def _read_loop(baud_rate: int) -> None:
             raw_str = line.decode("utf-8", errors="ignore").strip()
             raw = int(raw_str)
 
+            # AD8232 leads-off detection: Arduino sends -1 when LO+/LO- triggered
+            if raw == -1:
+                _cancel_watchdog()
+                set_gpio_state("idle")
+                print("[Serial] Leads off detected.")
+                continue
+
             if raw < 0 or raw > 1023:
                 continue
 

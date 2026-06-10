@@ -94,6 +94,37 @@ MAX_BUFFER = 1000
 CIRCUIT_RESET = 30.0
 FATIGUE_THRESHOLD = 15
 
+# AD8232 signal processing
+# The AD8232 output is centred at VCC/2 (~512 ADC) when electrodes are on skin.
+# EMG amplitude = |raw - midpoint|; we smooth it with an EMA for the envelope.
+EMA_ALPHA = 0.15          # smoothing factor (lower = smoother but slower response)
+_envelope: float = 0.0   # current smoothed amplitude
+
+# Calibration baseline = resting DC midpoint (~512 for AD8232).
+# Default 512 works without calibration; POST /calibrate to fine-tune.
+_calibration_baseline: float = 512.0
+
+
+def set_calibration_baseline(raw_value: float) -> None:
+    """Set the DC midpoint baseline and reset session stats + EMA."""
+    global _calibration_baseline, _envelope, _peak, _sum, _count
+    _calibration_baseline = float(raw_value)
+    _envelope = 0.0  # reset EMA so old signal doesn't bleed in
+    _peak  = 0.0
+    _sum   = 0.0
+    _count = 0
+    print(f"[DB] AD8232 baseline set: {raw_value:.0f} ADC (midpoint calibrated)")
+
+
+def get_calibration_baseline() -> float:
+    return _calibration_baseline
+
+
+def get_current_pct() -> float:
+    """Return the most recent EMA envelope percentage."""
+    max_amp = max(_calibration_baseline, 1023.0 - _calibration_baseline)
+    return round(min(_envelope / max_amp * 100.0, 100.0), 2) if max_amp > 0 else 0.0
+
 
 def _derive_status(pct: float) -> str:
     return "normal" if pct < FATIGUE_THRESHOLD else "fatigue"
@@ -149,9 +180,17 @@ def _schedule_flush() -> None:
 
 
 def insert_reading(raw_value: int) -> dict:
-    global _peak, _sum, _count
+    global _peak, _sum, _count, _envelope
 
-    pct = round((raw_value / 1023) * 100, 2)
+    # AD8232: signal is AC-coupled, centred at baseline (~512 ADC).
+    # Amplitude = rectified deviation from midpoint, smoothed by EMA.
+    amplitude = abs(raw_value - _calibration_baseline)
+    _envelope = EMA_ALPHA * amplitude + (1.0 - EMA_ALPHA) * _envelope
+
+    # Percentage: envelope as % of the max possible swing from the baseline
+    max_amp = max(_calibration_baseline, 1023.0 - _calibration_baseline)
+    pct = round(min(_envelope / max_amp * 100.0, 100.0), 2)
+
     if pct > _peak:
         _peak = pct
     _sum += pct

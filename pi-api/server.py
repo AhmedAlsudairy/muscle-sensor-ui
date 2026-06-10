@@ -9,7 +9,8 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from db import init_db, get_readings, get_stats, insert_reading, set_calibration_baseline, get_calibration_baseline
+from db import init_db, get_readings, get_stats, insert_reading, \
+    set_calibration_baseline, get_calibration_baseline, get_current_pct
 from serial_reader import list_ports, start_serial, stop_serial, is_connected, emitter, get_last_raw
 
 load_dotenv()
@@ -133,13 +134,14 @@ def post_reading():
 
 @app.route("/calibrate", methods=["GET"])
 def calibrate_get():
-    """Return current calibration baseline."""
+    """Return current calibration state and live EMA envelope percentage."""
     baseline = get_calibration_baseline()
     return jsonify({
-        "baseline_raw": int(baseline),
-        "baseline_pct": round(baseline / 1023 * 100, 2),
-        "last_raw":     get_last_raw(),
-        "last_pct":     round(max(0.0, (get_last_raw() - baseline) / max(1023 - baseline, 1) * 100), 2),
+        "baseline_raw":  int(baseline),
+        "baseline_pct":  round(baseline / 1023 * 100, 2),
+        "last_raw":      get_last_raw(),
+        "current_pct":   get_current_pct(),  # AD8232 EMA envelope %
+        "threshold_pct": 15,
     })
 
 
